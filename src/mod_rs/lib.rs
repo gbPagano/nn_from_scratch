@@ -11,7 +11,8 @@ use ndarray::prelude::*;
 #[pymodule]
 fn mod_rs(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<ActivationFunction>()?;
-     m.add_class::<Layer>()?;
+    m.add_class::<Layer>()?;
+    m.add_class::<NeuralNetwork>()?;
     Ok(())
 }
 
@@ -44,7 +45,11 @@ impl ActivationFunction {
     }
 }
 
+
+
+
 #[pyclass]
+#[derive(FromPyObject)]
 struct Layer {
     #[pyo3(get)]
     len_inputs: usize,
@@ -52,12 +57,18 @@ struct Layer {
     neurons: usize,
     #[pyo3(get)]
     function: ActivationFunction,
-    weights: Array2<f64>,
-    input: Option<Array2<f64>>,
-    net: Option<Array2<f64>>,
-    output: Option<Array2<f64>>,
+    #[pyo3(get)]
+    weights: Vec<Vec<f64>>,
+    #[pyo3(get)]
+    input: Option<Vec<Vec<f64>>>,
+    #[pyo3(get)]
+    net: Option<Vec<Vec<f64>>,>,
+    #[pyo3(get)]
+    output: Option<Vec<Vec<f64>>,>,
+    #[pyo3(get)]
     idx: Option<usize>,
 }
+
 
 
 #[pymethods]
@@ -71,7 +82,7 @@ impl Layer {
             len_inputs: len_inputs,
             neurons: neurons,
             function: function,
-            weights: weights,
+            weights: ndarray_to_vec2d(&weights),
             input: None,
             net: None,
             output: None,
@@ -81,40 +92,42 @@ impl Layer {
     
     fn forward(&mut self, layer_input: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
         
-        // let weights = vec2d_to_ndarray(&self.weights);
+        let weights = vec2d_to_ndarray(&self.weights);
 
-        self.input = Some(vec2d_to_ndarray(&layer_input));        
-        self.net = Some(self.input.as_ref().unwrap().dot(&self.weights.t()));
-        self.output = Some(self.net.as_ref().unwrap().mapv(|x| self.function.activate(x)));
-        ndarray_to_vec2d(&self.output.clone().unwrap())
+        self.input = Some(layer_input);
+        let input = vec2d_to_ndarray(&self.input.as_ref().unwrap());
+        self.net = Some(ndarray_to_vec2d(&input.dot(&weights.t())));
+        let net = vec2d_to_ndarray(&self.net.as_ref().unwrap());
+        self.output = Some(ndarray_to_vec2d(&net.mapv(|x| self.function.activate(x))));
+        self.output.clone().unwrap()
     }
 
-    fn backward(
-        &mut self, 
-        alpha: f64,
-        last: bool,
-        previous_delta: Option<Vec<Vec<f64>>>,
-        previous_weight: Option<Vec<Vec<f64>>>,
-        error: Option<Vec<Vec<f64>>>,
-    ) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-       
-            
+    // fn backward(
+    //     &mut self, 
+    //     alpha: f64,
+    //     last: bool,
+    //     previous_delta: Option<Vec<Vec<f64>>>,
+    //     previous_weight: Option<Vec<Vec<f64>>>,
+    //     error: Option<Vec<Vec<f64>>>,
+    // ) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
+    //    
+    //         
 
-        let delta = if last {
-            let error = vec2d_to_ndarray(&error.unwrap());
-            error * self.net.as_ref().unwrap().mapv(|x| self.function.derivative(x))
-        } else {
-            let previous_delta = vec2d_to_ndarray(&previous_delta.unwrap());
-            let previous_weight = vec2d_to_ndarray(&previous_weight.unwrap());
-            let delta = previous_delta.dot(&previous_weight).slice(s![.., 1..]).to_owned();
-            delta * self.net.as_ref().unwrap().mapv(|x| self.function.derivative(x))
-        };
-        
-        
-        self.weights = delta.t().dot(self.input.as_ref().unwrap()) * alpha + &self.weights;
-        
-        (ndarray_to_vec2d(&delta), ndarray_to_vec2d(&self.weights.to_owned()))
-    }
+    //     let delta = if last {
+    //         let error = vec2d_to_ndarray(&error.unwrap());
+    //         error * self.net.as_ref().unwrap().mapv(|x| self.function.derivative(x))
+    //     } else {
+    //         let previous_delta = vec2d_to_ndarray(&previous_delta.unwrap());
+    //         let previous_weight = vec2d_to_ndarray(&previous_weight.unwrap());
+    //         let delta = previous_delta.dot(&previous_weight).slice(s![.., 1..]).to_owned();
+    //         delta * self.net.as_ref().unwrap().mapv(|x| self.function.derivative(x))
+    //     };
+    //     
+    //     
+    //     self.weights = delta.t().dot(self.input.as_ref().unwrap()) * alpha + &self.weights;
+    //     
+    //     (ndarray_to_vec2d(&delta), ndarray_to_vec2d(&self.weights.to_owned()))
+    // }
 
 
 
@@ -124,7 +137,28 @@ impl Layer {
 
 }
 
+#[pyclass]
+struct NeuralNetwork {
+    layers: Vec<Layer>,
+    #[pyo3(get)]
+    all_mse: Vec<f64>,
+}
 
+#[pymethods]
+impl NeuralNetwork {
+    #[new]
+    fn new(mut layers: Vec<Layer>) -> Self {
+        for (idx, layer) in layers.iter_mut().enumerate() {
+            layer.set_idx(idx + 1);
+        }
+        
+        NeuralNetwork {
+            layers,
+            all_mse: Vec::new(),
+        }
+    }
+
+}
 
 fn vec2d_to_ndarray(vec2d: &Vec<Vec<f64>>) -> Array2<f64> {
     let rows = vec2d.len();

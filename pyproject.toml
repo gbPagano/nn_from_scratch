@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "mod_rspy"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 maturin = "^0.15.3"
 
 
