@@ -4,7 +4,8 @@ use ndarray::{Array, Array2, concatenate};
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::Uniform;
 use ndarray::prelude::*;
-
+use kdam::tqdm;
+use itertools::izip;
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
@@ -162,10 +163,13 @@ impl NeuralNetwork {
 
     fn forward(&mut self, x_input: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
 
+
         let x_input = vec2d_to_ndarray(&x_input);
 
         let mut input_layer = concatenate![Axis(1), Array::from_shape_vec((1, 1), vec![1.0]).unwrap(), x_input.clone()];
         let mut output: Array2<f64> = Array::zeros((0, 0));
+
+        
 
         for layer in &mut self.layers {
             output = vec2d_to_ndarray(&layer.forward(ndarray_to_vec2d(&input_layer)));
@@ -198,7 +202,97 @@ impl NeuralNetwork {
         weights
     }
 
+    fn predict(&mut self, x: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        self.forward(x)
+    }
+
+    fn fit(
+        &mut self, 
+        x_train: Vec<Vec<Vec<f64>>>, 
+        y_train: Vec<Vec<Vec<f64>>>,
+        epochs: i32,
+        alpha: f64,
+    ) {
+        
+        for epoch in tqdm!(0..epochs) {
+            let mut errors = Vec::new();
+            for (x, y) in izip!(&x_train, &y_train) {
+                let out = self.forward(x.to_vec());
+                let error = subtract_vectors(y.to_vec(), out);
+                errors.push(sum_rows(square_matrix(&error)));
+                self.backward(alpha, error);
+            }
+            
+            let sum_errors = sum_rows(errors);
+            let mse = calculate_mean(sum_errors);
+
+            if epoch % 100 == 0 {
+                println!("MSE: {}", mse);
+            }
+
+            self.all_mse.push(mse);
+        }
+
+    }
+
+
 }
+
+fn sum_rows(matrix: Vec<Vec<f64>>) -> Vec<f64> {
+    let mut sums = Vec::new();
+
+    for row in matrix {
+        let row_sum: f64 = row.iter().sum();
+        sums.push(row_sum);
+    }
+
+    sums
+}
+
+
+fn calculate_mean(numbers: Vec<f64>) -> f64 {
+    let sum: f64 = numbers.iter().sum();
+    let count = numbers.len() as f64;
+    sum / count
+}
+
+
+fn square_matrix(matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+    let mut result = Vec::new();
+
+    for row in matrix {
+        let mut squared_row = Vec::new();
+
+        for &element in row {
+            let squared_element = element * element;
+            squared_row.push(squared_element);
+        }
+
+        result.push(squared_row);
+    }
+
+    result
+}
+
+
+
+fn subtract_vectors(v1: Vec<Vec<f64>>, v2: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+
+
+    let mut result = Vec::new();
+
+    for i in 0..v1.len() {
+        let mut row = Vec::new();
+        for j in 0..v1[i].len() {
+            let element = v1[i][j] - v2[0][0];
+            row.push(element);
+        }
+        result.push(row);
+    }
+
+    result
+}
+
 
 fn vec2d_to_ndarray(vec2d: &Vec<Vec<f64>>) -> Array2<f64> {
     let rows = vec2d.len();
