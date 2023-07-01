@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use std::f64;
-use ndarray::{Array, Array2, stack, concatenate};
+use ndarray::{Array, Array2, concatenate};
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::Uniform;
 use ndarray::prelude::*;
@@ -102,32 +102,34 @@ impl Layer {
         self.output.clone().unwrap()
     }
 
-    // fn backward(
-    //     &mut self, 
-    //     alpha: f64,
-    //     last: bool,
-    //     previous_delta: Option<Vec<Vec<f64>>>,
-    //     previous_weight: Option<Vec<Vec<f64>>>,
-    //     error: Option<Vec<Vec<f64>>>,
-    // ) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-    //    
-    //         
+    fn backward(
+        &mut self, 
+        alpha: f64,
+        last: bool,
+        previous_delta: Option<Vec<Vec<f64>>>,
+        previous_weight: Option<Vec<Vec<f64>>>,
+        error: Option<Vec<Vec<f64>>>,
+    ) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
+       
+        let net = vec2d_to_ndarray(&self.net.as_ref().unwrap());
 
-    //     let delta = if last {
-    //         let error = vec2d_to_ndarray(&error.unwrap());
-    //         error * self.net.as_ref().unwrap().mapv(|x| self.function.derivative(x))
-    //     } else {
-    //         let previous_delta = vec2d_to_ndarray(&previous_delta.unwrap());
-    //         let previous_weight = vec2d_to_ndarray(&previous_weight.unwrap());
-    //         let delta = previous_delta.dot(&previous_weight).slice(s![.., 1..]).to_owned();
-    //         delta * self.net.as_ref().unwrap().mapv(|x| self.function.derivative(x))
-    //     };
-    //     
-    //     
-    //     self.weights = delta.t().dot(self.input.as_ref().unwrap()) * alpha + &self.weights;
-    //     
-    //     (ndarray_to_vec2d(&delta), ndarray_to_vec2d(&self.weights.to_owned()))
-    // }
+        let delta = if last {
+            let error = vec2d_to_ndarray(&error.unwrap());
+            error * net.mapv(|x| self.function.derivative(x))
+        } else {
+            let previous_delta = vec2d_to_ndarray(&previous_delta.unwrap());
+            let previous_weight = vec2d_to_ndarray(&previous_weight.unwrap());
+            let delta = previous_delta.dot(&previous_weight).slice(s![.., 1..]).to_owned();
+            delta * net.mapv(|x| self.function.derivative(x))
+        };
+        
+        let input = vec2d_to_ndarray(&self.input.as_ref().unwrap());
+        let weights = vec2d_to_ndarray(&self.weights);
+
+        self.weights = ndarray_to_vec2d(&(delta.t().dot(&input) * alpha + &weights));
+        
+        (ndarray_to_vec2d(&delta), self.weights.to_owned().clone())
+    }
 
 
 
@@ -151,11 +153,49 @@ impl NeuralNetwork {
         for (idx, layer) in layers.iter_mut().enumerate() {
             layer.set_idx(idx + 1);
         }
-        
+
         NeuralNetwork {
             layers,
             all_mse: Vec::new(),
         }
+    }
+
+    fn forward(&mut self, x_input: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+
+        let x_input = vec2d_to_ndarray(&x_input);
+
+        let mut input_layer = concatenate![Axis(1), Array::from_shape_vec((1, 1), vec![1.0]).unwrap(), x_input.clone()];
+        let mut output: Array2<f64> = Array::zeros((0, 0));
+
+        for layer in &mut self.layers {
+            output = vec2d_to_ndarray(&layer.forward(ndarray_to_vec2d(&input_layer)));
+            input_layer = concatenate![Axis(1), Array::from_shape_vec((1, 1), vec![1.0]).unwrap(), output];
+        }
+
+        ndarray_to_vec2d(&output)
+    }
+
+    fn backward(&mut self, alpha: f64, error: Vec<Vec<f64>>) {
+
+
+        let mut previous_delta = None;
+        let mut previous_weight = None;
+        let mut last = true;
+        
+        for layer in self.layers.iter_mut().rev() {
+            let (delta, weights) = layer.backward(alpha, last, previous_delta, previous_weight, Some(error.clone()));
+            last = false;
+            previous_delta = Some(delta);
+            previous_weight = Some(weights);
+        }
+    }
+
+    fn get_weights(&self) -> Vec<Vec<Vec<f64>>> {
+        let mut weights = Vec::new();
+        for layer in &self.layers {
+            weights.push(layer.weights.clone());
+        }
+        weights
     }
 
 }
