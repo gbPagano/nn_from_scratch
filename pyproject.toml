@@ -34,4 +34,11 @@ cmd = '''
 '''
 help = "Generates the code coverage report"
 
+[tool.taskipy.tasks.format]
+cmd = "isort src && ruff format src"
+help = "Formats the source code of the project"
+
+[tool.taskipy.tasks.format_tests]
+cmd = "isort tests && ruff format tests"
+help = "Formats the tests code of the project"
 
