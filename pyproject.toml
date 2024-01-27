@@ -1,16 +1,37 @@
 [tool.poetry]
-name = "mod-rspy"
+name = "nn-from-scratch"
 version = "0.1.0"
 description = ""
 authors = ["gbPagano <guilhermebpagano@gmail.com>"]
 readme = "README.md"
-packages = [{include = "mod_rspy"}]
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.10"
-maturin = "^0.15.3"
+python = "^3.11"
+numpy = "^1.26.3"
 
+
+[tool.poetry.group.dev.dependencies]
+isort = "^5.13.2"
+ruff = "^0.1.14"
+taskipy = "^1.12.2"
+pytest = "^7.4.4"
+pytest-cov = "^4.1.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+
+[tool.taskipy.tasks]
+test = { cmd = "pytest -vv", help = "Run all tests"}
+
+[tool.taskipy.tasks.coverage]
+cmd = '''
+    pytest -vv --cov=src &&
+    coverage html -d /tmp/coverage &&
+    firefox /tmp/coverage/index.html
+'''
+help = "Generates the code coverage report"
+
+
