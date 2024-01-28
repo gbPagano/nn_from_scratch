@@ -17,6 +17,7 @@ ruff = "^0.1.14"
 taskipy = "^1.12.2"
 pytest = "^7.4.4"
 pytest-cov = "^4.1.0"
+coverage = {extras = ["toml"], version = "^7.4.1"}
 
 [build-system]
 requires = ["poetry-core"]
@@ -42,3 +43,13 @@ help = "Formats the source code of the project"
 cmd = "isort tests && ruff format tests"
 help = "Formats the tests code of the project"
 
+
+[tool.coverage.report]
+exclude_lines = [
+    'pragma: no cover',
+    'def __repr__,',
+    'if __name__ == "__main__":',
+]
+omit = [
+    'src/functions.py',
+]

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 
-class ActivationFunction(ABC):  # pragma: no cover
+class ActivationFunction(ABC):
     @abstractmethod
     def activate(self, x) -> float:
         ...
@@ -59,6 +59,6 @@ class ELU(ActivationFunction):
         return 1 if x >= 0 else self.activate(x) + self.a
 
 
-class ErrorFunc:
+class ErrorFunction:
     def get_error(self, desired, output):
         return 0.5 * (desired - output) ** 2
