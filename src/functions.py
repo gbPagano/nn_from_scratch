@@ -31,10 +31,10 @@ class Sigmoid(ActivationFunction):
 
 class ReLU(ActivationFunction):
     def activate(self, x):
-        return max(0, x)
+        return np.maximum(0, x)
 
     def derivative(self, x):
-        return 1 if x >= 0 else 0
+        return np.where(x > 0, 1, 0)
 
 
 class LeakyReLU(ActivationFunction):
@@ -60,5 +60,10 @@ class ELU(ActivationFunction):
 
 
 class ErrorFunction:
-    def get_error(self, desired, output):
-        return 0.5 * (desired - output) ** 2
+    def get_mse(self, desired, output):
+        errors = []
+        for y, out in zip(desired, output):
+            err = 0.5 * sum((y - out) ** 2)
+            errors.append(err)
+        
+        return sum(errors) / len(errors)
