@@ -79,10 +79,11 @@ class NeuralNetwork:
         batch_errors = []
         for epoch in track(range(1, epochs+1), description="Processing..."):
             outputs = []
-            data = list(zip(x_train,y_train))
-            np.random.shuffle(data)
-            x_train,y_train = zip(*data)
-            x_train,y_train = np.array(x_train), np.array(y_train)
+
+            # shuffling the data
+            indexes = np.random.permutation(len(x_train))
+            x_train, y_train = x_train[indexes], y_train[indexes]
+
             for x, y in zip(x_train, y_train):
                 out = self._forward(x)
                 outputs.append(out)
@@ -93,7 +94,6 @@ class NeuralNetwork:
                     self._backward(alpha, batch_error)
                     batch_errors = []
 
-            
             mse = ErrorFunction().get_mse(y_train, outputs)
             if not epoch % 5:
                 print(f"EPOCH: {epoch} MSE: {mse}")
