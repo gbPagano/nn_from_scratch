@@ -42,10 +42,10 @@ class LeakyReLU(ActivationFunction):
         self.a = alpha
 
     def activate(self, x):
-        return max(self.a * x, x)
+        return np.maximum(self.a * x, x)
 
     def derivative(self, x):
-        return 1 if x >= 0 else self.a
+        return np.where(x >= 0, 1, self.a)
 
 
 class ELU(ActivationFunction):
@@ -53,10 +53,10 @@ class ELU(ActivationFunction):
         self.a = alpha
 
     def activate(self, x):
-        return x if x >= 0 else self.a * (np.exp(x) - 1)
+        return np.where(x >= 0, x, self.a * (np.exp(x) - 1))
 
     def derivative(self, x):
-        return 1 if x >= 0 else self.activate(x) + self.a
+        return np.where(x >= 0, 1, self.activate(x) + self.a)
 
 
 class ErrorFunction:
