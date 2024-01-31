@@ -106,7 +106,7 @@ if __name__ == "__main__":
         res[int(n)] = 1
         return res
 
-    data_train = pl.read_csv("train.csv")
+    data_train = pl.read_csv("datasets/kaggle_mnist/train.csv")
 
     y_train = np.array(data_train.drop_in_place("label"))
     y_train = np.array([number_to_neurons(y) for y in y_train])
@@ -114,14 +114,14 @@ if __name__ == "__main__":
     x_train = np.array([row for row in data_train.rows()]) / 255
 
 
-    from src.functions import ReLU, TanH
+    from src.functions import ReLU, TanH, ELU
+    from datetime import datetime
 
- 
 
     nn = NeuralNetwork(
-        Layer(neurons=(784, 10), function=ReLU()),
-        # Layer(neurons=(10, 10), function=ReLU()),
-        Layer(neurons=(10, 10), function=TanH()),
+        Layer(neurons=(784, 28), function=ELU()),
+        Layer(neurons=(28, 19), function=ELU()),
+        Layer(neurons=(19, 10), function=TanH()),
     )
 
     nn.fit(
@@ -133,9 +133,9 @@ if __name__ == "__main__":
     )
 
     def kaggle_predict(rede, n):
-        data_test = pl.read_csv("test.csv")
+        data_test = pl.read_csv("datasets/kaggle_mnist/test.csv")
         x_test = np.array([row for row in data_test.rows()]) / 255
-        kaggle_df = pl.read_csv("sample_submission.csv")
+        kaggle_df = pl.read_csv("datasets/kaggle_mnist/sample_submission.csv")
         predicts = []
         for idx in range(28_000):
             predict = np.argmax(rede._forward(x_test[idx]))
@@ -148,4 +148,4 @@ if __name__ == "__main__":
         submission = kaggle_df.update(df_predicts)
         submission.write_csv(f"predicts_kaggle_{n}.csv")
 
-    kaggle_predict(nn, "28/01 22:19")
+    kaggle_predict(nn, str(datetime.now().date()))
