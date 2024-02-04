@@ -1,8 +1,8 @@
 import pytest
 import numpy as np
 
-from src.functions import Sigmoid, TanH
-from src.main import Layer, NeuralNetwork
+from nn_from_scratch import Layer, NeuralNetwork
+from nn_from_scratch.functions import Sigmoid, TanH
 
 
 @pytest.fixture

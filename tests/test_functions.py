@@ -1,4 +1,4 @@
-from src.functions import ErrorFunction
+from nn_from_scratch.functions import ErrorFunction
 
 
 def test_error_function(simple_nn):

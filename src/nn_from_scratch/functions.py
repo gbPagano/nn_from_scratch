@@ -65,5 +65,5 @@ class ErrorFunction:
         for y, out in zip(desired, output):
             err = 0.5 * sum((y - out) ** 2)
             errors.append(err)
-        
+
         return sum(errors) / len(errors)
