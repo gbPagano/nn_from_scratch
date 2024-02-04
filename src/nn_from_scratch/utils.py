@@ -13,6 +13,6 @@ progress = Progress(
     BarColumn(),
     TaskProgressColumn(),
     MofNCompleteColumn(),
-    TimeElapsedColumn(),
     TimeRemainingColumn(),
+    TimeElapsedColumn(),
 )

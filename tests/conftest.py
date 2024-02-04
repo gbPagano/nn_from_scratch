@@ -73,8 +73,8 @@ def simple_nn():
         ]
     )
     # defining input and desired output
-    inputs = np.array([[0.05, 0.1]])
-    desired = np.array([[0.01, 0.99]])
+    inputs = np.array([0.05, 0.1])
+    desired = np.array([0.01, 0.99])
 
     return nn, inputs, desired
 

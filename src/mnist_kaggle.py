@@ -47,7 +47,6 @@ def main():
         epochs=500,
         alpha=0.05,
         batch_size=15,
-        evaluate_step=1,
     )
 
     filename = f"kaggle_submission_{datetime.now().strftime('%Y-%m-%d_%H:%M')}"

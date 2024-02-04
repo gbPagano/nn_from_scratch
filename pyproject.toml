@@ -31,7 +31,7 @@ test = { cmd = "pytest -vv", help = "Run all tests"}
 
 [tool.taskipy.tasks.coverage]
 cmd = '''
-    pytest -vv --cov=src &&
+    pytest -vv --cov=nn_from_scratch &&
     coverage html -d /tmp/coverage &&
     firefox /tmp/coverage/index.html
 '''
