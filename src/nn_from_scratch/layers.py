@@ -16,7 +16,7 @@ class Layer:
         self.previous_layer: Optional[Layer] = None
         self.next_layer: Optional[Layer] = None
         self.delta = None
-        self.old_weights = None
+        self.old_weights = self.weights.copy()
         self.input = None
         self.net = None
         self.output = None
@@ -31,7 +31,7 @@ class Layer:
             return self.output
         return self.next_layer.forward()
 
-    def backward(self, alpha: float, error: Optional[float] = None):
+    def calc_gradient_descent(self, error: Optional[np.ndarray] = None):
         if self.next_layer is None:  # is last layer
             self.delta = error * self.function.derivative(self.net)
         else:
@@ -39,8 +39,18 @@ class Layer:
                 self.next_layer.delta @ self.next_layer.old_weights
             ) * self.function.derivative(self.net)
 
+        gradient_descent = np.array([self.delta]).T @ np.array([self.input])
+        return gradient_descent
+
+    def update_weights(self, alpha: float, gradient_descent: np.ndarray):
         self.old_weights = self.weights.copy()
-        self.weights += np.array([self.delta]).T @ np.array([self.input]) * alpha
+        self.weights += gradient_descent * alpha
+
+    def backward(self, alpha: float, error: Optional[np.ndarray] = None):
+        gradient_descent = self.calc_gradient_descent(error)
+
+        self.old_weights = self.weights.copy()
+        self.weights += gradient_descent * alpha
 
         if self.previous_layer is not None:
             self.previous_layer.backward(alpha)

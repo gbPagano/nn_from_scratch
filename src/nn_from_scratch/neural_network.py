@@ -1,8 +1,10 @@
+from functools import reduce
+
 import numpy as np
 
 from nn_from_scratch.functions import ErrorFunction
 from nn_from_scratch.layers import Layer
-from nn_from_scratch.utils import progress
+from nn_from_scratch.utils import chunks, progress
 
 
 class NeuralNetwork:
@@ -26,6 +28,13 @@ class NeuralNetwork:
     def _backward(self, alpha: float, error: float):
         self.last_layer.backward(alpha, error)
 
+    def _get_all_layers_gradient_descent(self, error: np.ndarray):
+        gradients = []
+        for layer in reversed(self.layers):
+            gradients.append(layer.calc_gradient_descent(error))
+
+        return gradients
+
     def fit(
         self,
         *,
@@ -36,29 +45,32 @@ class NeuralNetwork:
         batch_size: int,
         evaluate_step: int = 5,
     ):
-        assert (
-            len(y_train) % batch_size == 0
-        ), "The dataset must be divisible by the batch size"
         with progress:
             for epoch in progress.track(
                 range(1, epochs + 1), description="Training..."
             ):
-                batch_errors = []
-                outputs = []
-
                 # shuffling the data
                 indexes = np.random.permutation(len(x_train))
                 x_train, y_train = x_train[indexes], y_train[indexes]
 
-                for x, y in zip(x_train, y_train):
-                    out = self._forward(x)
-                    outputs.append(out)
-                    error = y - out
-                    batch_errors.append(error)
-                    if len(batch_errors) == batch_size:
-                        batch_error = sum(batch_errors) / batch_size
-                        self._backward(alpha, batch_error)
-                        batch_errors = []
+                outputs = []
+                for chunk in chunks(zip(x_train, y_train), batch_size):
+                    batch_errors = []
+                    batch_gradients = []
+                    for x, y in chunk:
+                        out = self._forward(x)
+                        outputs.append(out)
+                        error = y - out
+                        batch_errors.append(error)
+                        gradients = self._get_all_layers_gradient_descent(error)
+                        batch_gradients.append(gradients)
+
+                    mean_gradients = [
+                        np.mean(layer_grad, axis=0)
+                        for layer_grad in zip(*batch_gradients)
+                    ]
+                    for layer, gradient in zip(reversed(self.layers), mean_gradients):
+                        layer.update_weights(alpha, gradient)
 
                 if not epoch % evaluate_step:
                     mse = ErrorFunction().get_mse(y_train, outputs)

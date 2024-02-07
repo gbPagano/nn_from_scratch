@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 
 from nn_from_scratch import Layer, NeuralNetwork
-from nn_from_scratch.functions import ELU, TanH
+from nn_from_scratch.functions import ELU, LeakyReLU, TanH
 
 
 def number_to_neurons(
@@ -44,9 +44,10 @@ def main():
     nn.fit(
         x_train=x_train,
         y_train=y_train,
-        epochs=500,
-        alpha=0.05,
-        batch_size=15,
+        epochs=100,
+        alpha=0.02,
+        batch_size=8,
+        evaluate_step=5,
     )
 
     filename = f"kaggle_submission_{datetime.now().strftime('%Y-%m-%d_%H:%M')}"
