@@ -57,7 +57,8 @@ def test_last_layer_backward(simple_layers_a):
     layer_b.forward(layer_a.output)
 
     output_err = desired - layer_b.output
-    layer_b.backward(0.5, output_err)
+    gradient = layer_b.gradient_descent(output_err)
+    layer_b.update_weights(0.5, gradient)
 
     expected_weights = np.array(
         [
@@ -79,8 +80,12 @@ def test_middle_layer_backward(simple_layers_a):
     layer_a.next_layer = layer_b
 
     output_err = desired - layer_b.output
-    layer_b.backward(0.5, output_err)
-    layer_a.backward(0.5)
+
+    gradient = layer_b.gradient_descent(output_err)
+    layer_b.update_weights(0.5, gradient)
+
+    gradient = layer_a.gradient_descent()
+    layer_a.update_weights(0.5, gradient)
 
     expected_weights = np.array(
         [
@@ -91,33 +96,3 @@ def test_middle_layer_backward(simple_layers_a):
 
     # np asserts
     assert_array_almost_equal(layer_a.weights, expected_weights)
-
-
-def test_backward_linked_layers(simple_layers_a):
-    # example from https://ww2.inf.ufg.br/~anderson/deeplearning/20181/Aula%202%20-%20Multilayer%20Perceptron.pdf
-    layer_a, layer_b, inputs, desired = simple_layers_a
-
-    layer_a.forward(inputs)
-    layer_b.forward(layer_a.output)
-    layer_a.next_layer = layer_b
-    layer_b.previous_layer = layer_a
-
-    output_err = desired - layer_b.output
-    layer_b.backward(0.5, output_err)
-
-    expected_weights_a = np.array(
-        [
-            [0.14978072, 0.19956143],
-            [0.24975114, 0.29950229],
-        ]
-    )
-    expected_weights_b = np.array(
-        [
-            [0.35891648, 0.408666186],
-            [0.511301270, 0.561370121],
-        ]
-    )
-
-    # np asserts
-    assert_array_almost_equal(layer_a.weights, expected_weights_a)
-    assert_array_almost_equal(layer_b.weights, expected_weights_b)

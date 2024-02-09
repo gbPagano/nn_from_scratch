@@ -1,5 +1,3 @@
-from functools import reduce
-
 import numpy as np
 
 from nn_from_scratch.functions import ErrorFunction
@@ -25,13 +23,14 @@ class NeuralNetwork:
         self.output = self.first_layer.forward(x_input)
         return self.output
 
-    def _backward(self, alpha: float, error: float):
-        self.last_layer.backward(alpha, error)
+    def _backward(self, alpha: float, mean_gradients: np.ndarray):
+        for layer, gradient in zip(reversed(self.layers), mean_gradients):
+            layer.update_weights(alpha, gradient)
 
-    def _get_all_layers_gradient_descent(self, error: np.ndarray):
+    def _get_layers_gradient_descent(self, error: np.ndarray):
         gradients = []
         for layer in reversed(self.layers):
-            gradients.append(layer.calc_gradient_descent(error))
+            gradients.append(layer.gradient_descent(error))
 
         return gradients
 
@@ -55,22 +54,19 @@ class NeuralNetwork:
 
                 outputs = []
                 for chunk in chunks(zip(x_train, y_train), batch_size):
-                    batch_errors = []
                     batch_gradients = []
                     for x, y in chunk:
                         out = self._forward(x)
                         outputs.append(out)
                         error = y - out
-                        batch_errors.append(error)
-                        gradients = self._get_all_layers_gradient_descent(error)
+                        gradients = self._get_layers_gradient_descent(error)
                         batch_gradients.append(gradients)
 
                     mean_gradients = [
                         np.mean(layer_grad, axis=0)
                         for layer_grad in zip(*batch_gradients)
                     ]
-                    for layer, gradient in zip(reversed(self.layers), mean_gradients):
-                        layer.update_weights(alpha, gradient)
+                    self._backward(alpha, mean_gradients)
 
                 if not epoch % evaluate_step:
                     mse = ErrorFunction().get_mse(y_train, outputs)

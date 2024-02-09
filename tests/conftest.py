@@ -1,5 +1,5 @@
-import pytest
 import numpy as np
+import pytest
 
 from nn_from_scratch import Layer, NeuralNetwork
 from nn_from_scratch.functions import Sigmoid, TanH
@@ -54,6 +54,7 @@ def simple_nn():
             [0.25, 0.3],
         ]
     )
+    nn.layers[0].old_weights = nn.layers[0].weights.copy()
     nn.layers[0].bias = np.array(
         [
             0.35,
@@ -66,6 +67,7 @@ def simple_nn():
             [0.5, 0.55],
         ]
     )
+    nn.layers[1].old_weights = nn.layers[1].weights.copy()
     nn.layers[1].bias = np.array(
         [
             0.6,

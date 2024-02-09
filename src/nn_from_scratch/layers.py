@@ -31,7 +31,7 @@ class Layer:
             return self.output
         return self.next_layer.forward()
 
-    def calc_gradient_descent(self, error: Optional[np.ndarray] = None):
+    def gradient_descent(self, error: Optional[np.ndarray] = None):
         if self.next_layer is None:  # is last layer
             self.delta = error * self.function.derivative(self.net)
         else:
@@ -45,12 +45,3 @@ class Layer:
     def update_weights(self, alpha: float, gradient_descent: np.ndarray):
         self.old_weights = self.weights.copy()
         self.weights += gradient_descent * alpha
-
-    def backward(self, alpha: float, error: Optional[np.ndarray] = None):
-        gradient_descent = self.calc_gradient_descent(error)
-
-        self.old_weights = self.weights.copy()
-        self.weights += gradient_descent * alpha
-
-        if self.previous_layer is not None:
-            self.previous_layer.backward(alpha)

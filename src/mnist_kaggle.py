@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 
 from nn_from_scratch import Layer, NeuralNetwork
-from nn_from_scratch.functions import ELU, LeakyReLU, TanH
+from nn_from_scratch.functions import ELU, TanH
 
 
 def number_to_neurons(

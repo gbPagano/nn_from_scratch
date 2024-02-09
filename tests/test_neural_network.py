@@ -17,10 +17,13 @@ def test_forward_nn(simple_nn):
 def test_backward_nn(simple_nn):
     nn, inputs, desired = simple_nn
 
-    output = nn._forward(inputs)
-    output_err = desired - output
-    nn._backward(0.5, output_err)
-
+    nn.fit(
+        x_train=np.array([inputs]),
+        y_train=np.array([desired]),
+        epochs=1,
+        alpha=0.5,
+        batch_size=1,
+    )
 
     expected_weights_a = np.array(
         [
