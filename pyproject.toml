@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["gbPagano <guilhermebpagano@gmail.com>"]
 readme = "README.md"
-packages = [{include = "nn_from_scratch", from = "src"}]
+packages = [{include = "nn_from_scratch", from = "src/python"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -27,31 +27,16 @@ build-backend = "poetry.core.masonry.api"
 
 
 [tool.taskipy.tasks]
-test = { cmd = "pytest -vv", help = "Run all tests"}
+test = { cmd = "pytest src/python -vv", help = "Run all tests"}
 
 [tool.taskipy.tasks.coverage]
 cmd = '''
-    pytest -vv --cov=nn_from_scratch &&
+    pytest src/python -vv --cov=src/python/nn_from_scratch &&
     coverage html -d /tmp/coverage &&
     firefox /tmp/coverage/index.html
 '''
 help = "Generates the code coverage report"
 
 [tool.taskipy.tasks.format]
-cmd = "isort src && ruff format src"
+cmd = "isort src/python && ruff format src/python"
 help = "Formats the source code of the project"
-
-[tool.taskipy.tasks.format_tests]
-cmd = "isort tests && ruff format tests"
-help = "Formats the tests code of the project"
-
-
-[tool.coverage.report]
-exclude_lines = [
-    'pragma: no cover',
-    'def __repr__,',
-    'if __name__ == "__main__":',
-]
-omit = [
-    'src/functions.py',
-]

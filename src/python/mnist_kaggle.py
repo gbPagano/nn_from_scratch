@@ -44,7 +44,7 @@ def main():
     nn.fit(
         x_train=x_train,
         y_train=y_train,
-        epochs=100,
+        epochs=10,
         alpha=0.02,
         batch_size=8,
         evaluate_step=5,
