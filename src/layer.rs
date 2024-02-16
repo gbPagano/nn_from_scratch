@@ -8,7 +8,22 @@ use num_traits::FromPrimitive;
 use crate::functions::*;
 use crate::utils::FloatNN;
 
-pub struct Layer<F: FloatNN> {
+pub trait Layer<F>: Sync + Send {
+    fn forward(&mut self, input: &Array1<F>) -> Array1<F>;
+    fn gradient_descent(
+        &mut self,
+        error: Option<&Array1<F>>,
+        next_layer: Option<&dyn Layer<F>>,
+    ) -> Array2<F>;
+    fn update_weights(&mut self, alpha: F, gradient_descent: &Array2<F>);
+
+    fn get_delta(&self) -> Option<&Array1<F>>;
+    fn get_net(&self) -> Option<&Array1<F>>;
+    fn get_output(&self) -> Option<&Array1<F>>;
+    fn get_weights(&self) -> &Array2<F>;
+}
+
+pub struct Dense<F: FloatNN> {
     pub function: Box<dyn ActivateFunction<F>>,
     pub weights: Array2<F>,
     pub bias: Array1<F>,
@@ -19,8 +34,7 @@ pub struct Layer<F: FloatNN> {
     pub net: Option<Array1<F>>,
     pub output: Option<Array1<F>>,
 }
-
-impl<F: FloatNN> Layer<F> {
+impl<F: FloatNN> Dense<F> {
     pub fn new(
         inputs: usize,
         outputs: usize,
@@ -40,7 +54,7 @@ impl<F: FloatNN> Layer<F> {
                 FromPrimitive::from_f64(0.5).unwrap(),
             ),
         );
-        Layer {
+        Dense {
             function: Box::new(function),
             weights,
             bias,
@@ -50,8 +64,9 @@ impl<F: FloatNN> Layer<F> {
             output: None,
         }
     }
-
-    pub fn forward(&mut self, input: &Array1<F>) -> Array1<F> {
+}
+impl<F: FloatNN> Layer<F> for Dense<F> {
+    fn forward(&mut self, input: &Array1<F>) -> Array1<F> {
         let net = input.dot(&self.weights.t()) + &self.bias;
         self.output = Some(self.function.activate(&net));
         self.input = Some(input.to_owned());
@@ -60,14 +75,27 @@ impl<F: FloatNN> Layer<F> {
         self.output.as_ref().unwrap().clone()
     }
 
-    pub fn gradient_descent(
+    fn get_delta(&self) -> Option<&Array1<F>> {
+        self.delta.as_ref()
+    }
+    fn get_net(&self) -> Option<&Array1<F>> {
+        self.net.as_ref()
+    }
+    fn get_output(&self) -> Option<&Array1<F>> {
+        self.output.as_ref()
+    }
+    fn get_weights(&self) -> &Array2<F> {
+        &self.weights
+    }
+
+    fn gradient_descent(
         &mut self,
         error: Option<&Array1<F>>,
-        next_layer: Option<&Layer<F>>,
+        next_layer: Option<&dyn Layer<F>>,
     ) -> Array2<F> {
         self.delta = if next_layer.is_some() {
-            let next_layer_delta = next_layer.unwrap().delta.as_ref().unwrap();
-            let next_layer_old_weights = &next_layer.unwrap().weights;
+            let next_layer_delta = next_layer.unwrap().get_delta().unwrap();
+            let next_layer_old_weights = next_layer.unwrap().get_weights();
             Some(
                 next_layer_delta.dot(next_layer_old_weights)
                     * self.function.derivative(self.net.as_ref().unwrap()),
@@ -84,7 +112,7 @@ impl<F: FloatNN> Layer<F> {
         })
     }
 
-    pub fn update_weights(&mut self, alpha: F, gradient_descent: &Array2<F>) {
+    fn update_weights(&mut self, alpha: F, gradient_descent: &Array2<F>) {
         Zip::from(&mut self.weights)
             .and(&(gradient_descent * alpha))
             .for_each(|a, &b| *a += b);
@@ -99,12 +127,12 @@ mod tests {
     use rstest::*;
 
     #[fixture]
-    fn simple_layers_a() -> (Layer<f64>, Layer<f64>, Array1<f64>, Array1<f64>) {
-        let mut layer_a = Layer::new(2, 2, Sigmoid);
+    fn simple_layers_a() -> (Dense<f64>, Dense<f64>, Array1<f64>, Array1<f64>) {
+        let mut layer_a = Dense::new(2, 2, Sigmoid);
         layer_a.weights = array![[0.15, 0.2], [0.25, 0.3]];
         layer_a.bias = array![0.35, 0.35];
 
-        let mut layer_b = Layer::new(2, 2, Sigmoid);
+        let mut layer_b = Dense::new(2, 2, Sigmoid);
         layer_b.weights = array![[0.4, 0.45], [0.5, 0.55]];
         layer_b.bias = array![0.6, 0.6];
 
@@ -115,16 +143,16 @@ mod tests {
     }
 
     #[fixture]
-    fn simple_layers_b() -> (Layer<f64>, Layer<f64>, Layer<f64>, Array1<f64>) {
-        let mut layer_a = Layer::new(2, 3, TanH);
+    fn simple_layers_b() -> (Dense<f64>, Dense<f64>, Dense<f64>, Array1<f64>) {
+        let mut layer_a = Dense::new(2, 3, TanH);
         layer_a.weights = array![[0.4, 0.5], [0.6, 0.7], [0.8, 0.3]];
         layer_a.bias = array![-0.2, -0.3, -0.4];
 
-        let mut layer_b = Layer::new(3, 2, TanH);
+        let mut layer_b = Dense::new(3, 2, TanH);
         layer_b.weights = array![[0.6, 0.2, 0.7], [0.7, 0.2, 0.8]];
         layer_b.bias = array![0.7, 0.3];
 
-        let mut layer_c = Layer::new(2, 1, TanH);
+        let mut layer_c = Dense::new(2, 1, TanH);
         layer_c.weights = array![[0.8, 0.5]];
         layer_c.bias = array![-0.1];
 
@@ -134,7 +162,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_forward_a(simple_layers_a: (Layer<f64>, Layer<f64>, Array1<f64>, Array1<f64>)) {
+    fn test_forward_a(simple_layers_a: (Dense<f64>, Dense<f64>, Array1<f64>, Array1<f64>)) {
         let (mut layer_a, mut layer_b, inputs, _) = simple_layers_a;
 
         layer_a.forward(&inputs);
@@ -160,7 +188,7 @@ mod tests {
 
     #[rstest]
     fn test_last_layer_backward(
-        simple_layers_a: (Layer<f64>, Layer<f64>, Array1<f64>, Array1<f64>),
+        simple_layers_a: (Dense<f64>, Dense<f64>, Array1<f64>, Array1<f64>),
     ) {
         let (mut layer_a, mut layer_b, inputs, desired) = simple_layers_a;
 
@@ -177,7 +205,7 @@ mod tests {
 
     #[rstest]
     fn test_middle_layer_backward(
-        simple_layers_a: (Layer<f64>, Layer<f64>, Array1<f64>, Array1<f64>),
+        simple_layers_a: (Dense<f64>, Dense<f64>, Array1<f64>, Array1<f64>),
     ) {
         let (mut layer_a, mut layer_b, inputs, desired) = simple_layers_a;
 
@@ -195,7 +223,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_forward_b(simple_layers_b: (Layer<f64>, Layer<f64>, Layer<f64>, Array1<f64>)) {
+    fn test_forward_b(simple_layers_b: (Dense<f64>, Dense<f64>, Dense<f64>, Array1<f64>)) {
         let (mut layer_a, mut layer_b, mut layer_c, inputs) = simple_layers_b;
 
         layer_a.forward(&inputs);

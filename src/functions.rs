@@ -107,7 +107,7 @@ impl ErrorFunction {
 mod tests {
     use super::*;
     use crate::functions::Sigmoid;
-    use crate::layer::Layer;
+    use crate::layer::Dense;
     use crate::neural_network::NeuralNetwork;
     use approx::assert_abs_diff_eq;
     use ndarray::{array, Array2};
@@ -115,11 +115,11 @@ mod tests {
 
     #[fixture]
     fn simple_nn() -> (NeuralNetwork<f64>, Array2<f64>, Array2<f64>) {
-        let mut layer_a = Layer::new(2, 2, Sigmoid);
+        let mut layer_a = Dense::new(2, 2, Sigmoid);
         layer_a.weights = array![[0.15, 0.2], [0.25, 0.3]];
         layer_a.bias = array![0.35, 0.35];
 
-        let mut layer_b = Layer::new(2, 2, Sigmoid);
+        let mut layer_b = Dense::new(2, 2, Sigmoid);
         layer_b.weights = array![[0.4, 0.45], [0.5, 0.55]];
         layer_b.bias = array![0.6, 0.6];
 

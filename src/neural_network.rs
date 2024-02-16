@@ -11,11 +11,16 @@ use crate::layer::Layer;
 use crate::utils::FloatNN;
 
 pub struct NeuralNetwork<F: FloatNN> {
-    pub layers: Vec<Layer<F>>,
+    pub layers: Vec<Box<dyn Layer<F>>>,
 }
 
 impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
-    pub fn new(layers: Vec<Layer<F>>) -> Self {
+    pub fn new(layers: Vec<impl Layer<F> + 'static>) -> Self {
+        let layers: Vec<Box<dyn Layer<F>>> = layers
+            .into_iter()
+            .map(|x| Box::new(x) as Box<dyn Layer<F>>)
+            .collect();
+
         NeuralNetwork { layers }
     }
 
@@ -23,7 +28,7 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
         let mut in_out = x_input;
         for layer in self.layers.iter_mut() {
             layer.forward(in_out);
-            in_out = layer.output.as_ref().unwrap();
+            in_out = layer.get_output().unwrap();
         }
         in_out.clone()
     }
@@ -39,7 +44,7 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
                 layer.gradient_descent(Some(error), None)
             };
             gradients.push(gradient);
-            next_layer = Some(layer);
+            next_layer = Some(&**layer);
         }
 
         gradients
@@ -157,17 +162,18 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
 mod tests {
     use super::*;
     use crate::functions::Sigmoid;
+    use crate::layer::Dense;
     use approx::assert_abs_diff_eq;
     use ndarray::array;
     use rstest::*;
 
     #[fixture]
     fn simple_nn_a() -> (NeuralNetwork<f64>, Array1<f64>, Array1<f64>) {
-        let mut layer_a = Layer::new(2, 2, Sigmoid);
+        let mut layer_a = Dense::new(2, 2, Sigmoid);
         layer_a.weights = array![[0.15, 0.2], [0.25, 0.3]];
         layer_a.bias = array![0.35, 0.35];
 
-        let mut layer_b = Layer::new(2, 2, Sigmoid);
+        let mut layer_b = Dense::new(2, 2, Sigmoid);
         layer_b.weights = array![[0.4, 0.45], [0.5, 0.55]];
         layer_b.bias = array![0.6, 0.6];
 
@@ -185,23 +191,23 @@ mod tests {
         nn.forward(&inputs);
 
         assert_abs_diff_eq!(
-            nn.layers[0].net.clone().unwrap(),
-            array![0.3775, 0.3925],
+            nn.layers[0].get_net().unwrap(),
+            &array![0.3775, 0.3925],
             epsilon = 1e-8
         );
         assert_abs_diff_eq!(
-            nn.layers[0].output.clone().unwrap(),
-            array![0.59326999, 0.59688438],
+            nn.layers[0].get_output().unwrap(),
+            &array![0.59326999, 0.59688438],
             epsilon = 1e-8
         );
         assert_abs_diff_eq!(
-            nn.layers[1].net.clone().unwrap(),
-            array![1.10590597, 1.2249214],
+            nn.layers[1].get_net().unwrap(),
+            &array![1.10590597, 1.2249214],
             epsilon = 1e-8
         );
         assert_abs_diff_eq!(
-            nn.layers[1].output.clone().unwrap(),
-            array![0.75136507, 0.77292847],
+            nn.layers[1].get_output().unwrap(),
+            &array![0.75136507, 0.77292847],
             epsilon = 1e-8
         );
     }
@@ -216,13 +222,13 @@ mod tests {
         nn.fit(x_train, y_train, 1, 0.5, 1, 10);
 
         assert_abs_diff_eq!(
-            nn.layers[0].weights,
-            array![[0.14978072, 0.19956143], [0.24975114, 0.29950229]],
+            nn.layers[0].get_weights(),
+            &array![[0.14978072, 0.19956143], [0.24975114, 0.29950229]],
             epsilon = 1e-8
         );
         assert_abs_diff_eq!(
-            nn.layers[1].weights,
-            array![[0.35891648, 0.408666186], [0.511301270, 0.561370121]],
+            nn.layers[1].get_weights(),
+            &array![[0.35891648, 0.408666186], [0.511301270, 0.561370121]],
             epsilon = 1e-9
         );
     }

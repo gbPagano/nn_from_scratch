@@ -44,14 +44,14 @@ def main():
     nn.fit(
         x_train=x_train,
         y_train=y_train,
-        epochs=10,
+        epochs=100,
         alpha=0.02,
         batch_size=8,
         evaluate_step=5,
     )
 
     filename = f"kaggle_submission_{datetime.now().strftime('%Y-%m-%d_%H:%M')}"
-    kaggle_submission(nn, filename)
+    # kaggle_submission(nn, filename)
 
 
 if __name__ == "__main__":

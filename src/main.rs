@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 
 use crate::functions::*;
-use crate::layer::Layer;
+use crate::layer::Dense;
 use crate::neural_network::NeuralNetwork;
 
 #[derive(Serialize, Deserialize)]
@@ -49,11 +49,11 @@ fn main() {
     };
 
     let mut nn: NeuralNetwork<F> = NeuralNetwork::new(vec![
-        Layer::new(784, 28, ELU::new(1.0)),
-        Layer::new(28, 19, ELU::new(1.0)),
-        Layer::new(19, 10, TanH),
+        Dense::new(784, 28, ELU::new(1.0)),
+        Dense::new(28, 19, ELU::new(1.0)),
+        Dense::new(19, 10, TanH),
     ]);
-    nn.fit(x_train, y_train, 10, 0.02, 8, 5);
+    nn.fit(x_train, y_train, 100, 0.02, 8, 1);
 
     let x_test = {
         let file = File::open("datasets/kaggle_mnist/test.csv").unwrap();
