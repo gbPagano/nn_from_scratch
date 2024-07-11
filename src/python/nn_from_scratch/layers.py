@@ -16,7 +16,6 @@ class Layer:
         self.previous_layer: Optional[Layer] = None
         self.next_layer: Optional[Layer] = None
         self.delta = None
-        self.old_weights = self.weights.copy()
         self.input = None
         self.net = None
         self.output = None
@@ -36,12 +35,11 @@ class Layer:
             self.delta = error * self.function.derivative(self.net)
         else:
             self.delta = (
-                self.next_layer.delta @ self.next_layer.old_weights
+                self.next_layer.delta @ self.next_layer.weights
             ) * self.function.derivative(self.net)
 
         gradient_descent = np.array([self.delta]).T @ np.array([self.input])
         return gradient_descent
 
     def update_weights(self, alpha: float, gradient_descent: np.ndarray):
-        self.old_weights = self.weights.copy()
         self.weights += gradient_descent * alpha

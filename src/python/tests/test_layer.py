@@ -81,11 +81,10 @@ def test_middle_layer_backward(simple_layers_a):
 
     output_err = desired - layer_b.output
 
-    gradient = layer_b.gradient_descent(output_err)
-    layer_b.update_weights(0.5, gradient)
-
-    gradient = layer_a.gradient_descent()
-    layer_a.update_weights(0.5, gradient)
+    grad_b = layer_b.gradient_descent(output_err)
+    grad_a = layer_a.gradient_descent()
+    layer_b.update_weights(0.5, grad_b)
+    layer_a.update_weights(0.5, grad_a)
 
     expected_weights = np.array(
         [
