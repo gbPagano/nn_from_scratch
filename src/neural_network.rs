@@ -12,6 +12,7 @@ use crate::utils::FloatNN;
 
 pub struct NeuralNetwork<F: FloatNN> {
     pub layers: Vec<Box<dyn Layer<F>>>,
+    pub terminal_output: bool,
 }
 
 impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
@@ -21,7 +22,10 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
             .map(|x| Box::new(x) as Box<dyn Layer<F>>)
             .collect();
 
-        NeuralNetwork { layers }
+        NeuralNetwork {
+            layers,
+            terminal_output: true,
+        }
     }
 
     pub fn forward(&mut self, x_input: &Array1<F>) -> Array1<F> {
@@ -90,7 +94,9 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
                 Column::Text(" ".to_owned()),
             ],
         );
-        pb.refresh().unwrap();
+        if self.terminal_output {
+            pb.refresh().unwrap();
+        }
         let start_time = Instant::now();
 
         let mut permutation: Vec<usize> = (0..x_train.len()).collect();
@@ -136,7 +142,7 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
                 self.update_weights(alpha, mean_gradients);
             }
 
-            if epoch % evaluate_step == 0 {
+            if self.terminal_output && epoch % evaluate_step == 0 {
                 let mse = ErrorFunction::get_mse::<F>(&desired, &outputs);
                 let epoch_str = format!("{: >width$}", epoch, width = epochs.to_string().len());
                 pb.write(format!(
@@ -146,15 +152,18 @@ impl<F: FloatNN + for<'a> std::iter::Sum<&'a F>> NeuralNetwork<F> {
                 ))
                 .unwrap();
             }
-
-            pb.update(1).unwrap();
-            pb.refresh().unwrap();
+            if self.terminal_output {
+                pb.update(1).unwrap();
+                pb.refresh().unwrap();
+            }
         }
-
-        let end_time = Instant::now();
-        let execution_time = end_time.duration_since(start_time);
-        println!("{}", pb.pb.fmt_elapsed_time());
-        println!("Tempo de execução: {:?}", execution_time);
+        if self.terminal_output {
+            pb.refresh().unwrap();
+            let end_time = Instant::now();
+            let execution_time = end_time.duration_since(start_time);
+            eprintln!("{}", pb.pb.fmt_elapsed_time());
+            eprintln!("Tempo de execução: {:?}", execution_time);
+        }
     }
 }
 
@@ -179,7 +188,10 @@ mod tests {
 
         let inputs = array![0.05, 0.1];
         let desired = array![0.01, 0.99];
-        let nn = NeuralNetwork::new(vec![layer_a, layer_b]);
+        let nn = NeuralNetwork {
+            layers: vec![Box::new(layer_a), Box::new(layer_b)],
+            terminal_output: false,
+        };
 
         (nn, inputs, desired)
     }
