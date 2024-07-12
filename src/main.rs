@@ -1,10 +1,5 @@
 extern crate blas_src;
 
-pub mod functions;
-pub mod layer;
-pub mod neural_network;
-pub mod utils;
-
 use csv::{ReaderBuilder, WriterBuilder};
 use ndarray::prelude::*;
 use ndarray::Array2;
@@ -13,9 +8,9 @@ use num_traits::Float;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 
-use crate::functions::*;
-use crate::layer::Dense;
-use crate::neural_network::NeuralNetwork;
+use nn_from_scratch::functions::*;
+use nn_from_scratch::layer::Dense;
+use nn_from_scratch::neural_network::NeuralNetwork;
 
 #[derive(Serialize, Deserialize)]
 struct ArrayWrapper {
