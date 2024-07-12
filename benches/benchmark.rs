@@ -58,7 +58,6 @@ fn bench_nn(c: &mut Criterion) {
     });
 
     group.sample_size(10);
-    group.measurement_time(std::time::Duration::from_secs(60));
     let (x_train, y_train) = mnist_f32();
     group.bench_function("mnist nn f32 fit", |b| {
         b.iter_with_setup(
@@ -73,7 +72,7 @@ fn bench_nn(c: &mut Criterion) {
                 (nn, x_train.clone(), y_train.clone())
             },
             |(mut nn, x_train, y_train)| {
-                nn.fit(black_box(x_train), black_box(y_train), 24, 0.02, 8, 1000);
+                nn.fit(black_box(x_train), black_box(y_train), 1, 0.02, 8, 1000);
             },
         );
     });
@@ -92,7 +91,7 @@ fn bench_nn(c: &mut Criterion) {
                 (nn, x_train.clone(), y_train.clone())
             },
             |(mut nn, x_train, y_train)| {
-                nn.fit(black_box(x_train), black_box(y_train), 24, 0.02, 8, 1000);
+                nn.fit(black_box(x_train), black_box(y_train), 1, 0.02, 8, 1000);
             },
         );
     });

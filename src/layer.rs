@@ -9,7 +9,7 @@ use crate::functions::*;
 use crate::utils::FloatNN;
 
 pub trait Layer<F>: Sync + Send {
-    fn forward(&mut self, input: &Array1<F>) -> Array1<F>;
+    fn forward(&mut self, input: &Array1<F>);
     fn gradient_descent(
         &mut self,
         error: Option<&Array1<F>>,
@@ -66,13 +66,11 @@ impl<F: FloatNN> Dense<F> {
     }
 }
 impl<F: FloatNN> Layer<F> for Dense<F> {
-    fn forward(&mut self, input: &Array1<F>) -> Array1<F> {
+    fn forward(&mut self, input: &Array1<F>){
         let net = input.dot(&self.weights.t()) + &self.bias;
         self.output = Some(self.function.activate(&net));
         self.input = Some(input.to_owned());
         self.net = Some(net);
-
-        self.output.as_ref().unwrap().clone()
     }
 
     fn get_delta(&self) -> Option<&Array1<F>> {
