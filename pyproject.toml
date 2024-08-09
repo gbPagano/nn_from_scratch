@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["gbPagano <guilhermebpagano@gmail.com>"]
 readme = "README.md"
-packages = [{include = "nn_from_scratch", from = "src/python"}]
+packages = [{include = "nn_from_scratch", from = "python"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -27,7 +27,7 @@ build-backend = "poetry.core.masonry.api"
 
 
 [tool.taskipy.tasks]
-test = { cmd = "pytest src/python -vv", help = "Run all tests"}
+test = { cmd = "pytest python -vv", help = "Run all tests"}
 
 [tool.taskipy.tasks.coverage]
 cmd = '''

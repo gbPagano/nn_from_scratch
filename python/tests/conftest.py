@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
-from nn_from_scratch import Layer, NeuralNetwork
+from nn_from_scratch import Dense, NeuralNetwork
 from nn_from_scratch.functions import Sigmoid, TanH
 
 
 @pytest.fixture
 def simple_layers_a():
     # defining layers and initial weights
-    layer_a = Layer(neurons=(2, 2), function=Sigmoid())
+    layer_a = Dense(neurons=(2, 2), function=Sigmoid())
     layer_a.weights = np.array(
         [
             [0.15, 0.2],
@@ -21,7 +21,7 @@ def simple_layers_a():
             0.35,
         ]
     )
-    layer_b = Layer(neurons=(2, 2), function=Sigmoid())
+    layer_b = Dense(neurons=(2, 2), function=Sigmoid())
     layer_b.weights = np.array(
         [
             [0.4, 0.45],
@@ -45,8 +45,8 @@ def simple_layers_a():
 def simple_nn():
     # defining layers and initial weights
     nn = NeuralNetwork(
-        Layer(neurons=(2, 2), function=Sigmoid()),
-        Layer(neurons=(2, 2), function=Sigmoid()),
+        Dense(neurons=(2, 2), function=Sigmoid()),
+        Dense(neurons=(2, 2), function=Sigmoid()),
     )
     nn.layers[0].weights = np.array(
         [
@@ -84,7 +84,7 @@ def simple_nn():
 @pytest.fixture
 def simple_layers_b():
     # defining layers and initial weights
-    layer_a = Layer(neurons=(2, 3), function=TanH())
+    layer_a = Dense(neurons=(2, 3), function=TanH())
     layer_a.weights = np.array(
         [
             [0.4, 0.5],
@@ -99,7 +99,7 @@ def simple_layers_b():
             -0.4,
         ]
     )
-    layer_b = Layer(neurons=(3, 2), function=TanH())
+    layer_b = Dense(neurons=(3, 2), function=TanH())
     layer_b.weights = np.array(
         [
             [0.6, 0.2, 0.7],
@@ -112,7 +112,7 @@ def simple_layers_b():
             0.3,
         ]
     )
-    layer_c = Layer(neurons=(2, 1), function=TanH())
+    layer_c = Dense(neurons=(2, 1), function=TanH())
     layer_c.weights = np.array(
         [
             [0.8, 0.5],

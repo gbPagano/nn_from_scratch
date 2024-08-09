@@ -3,9 +3,10 @@ from typing import Optional
 import numpy as np
 
 from nn_from_scratch.functions import ActivationFunction
+from .layer import Layer
 
 
-class Layer:
+class Dense(Layer):
     def __init__(self, neurons: tuple[int], function: ActivationFunction):
         input_size, output_size = neurons
         self.weights = np.random.uniform(-0.5, 0.5, size=(output_size, input_size))

@@ -1,2 +1,2 @@
-from .layers import Layer
+from .layers import *
 from .neural_network import NeuralNetwork
