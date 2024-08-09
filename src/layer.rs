@@ -8,7 +8,7 @@ use num_traits::FromPrimitive;
 use crate::functions::*;
 use crate::utils::FloatNN;
 
-pub trait Layer<F>: Sync + Send {
+pub trait Layer<F> {
     fn forward(&mut self, input: &Array1<F>);
     fn gradient_descent(
         &mut self,
