@@ -32,4 +32,4 @@ path = "rust/src/lib.rs"
 
 [[bin]]
 name = "mnist"
-path = "rust/src/mnist.rs"
+path = "rust/src/bin/mnist.rs"
