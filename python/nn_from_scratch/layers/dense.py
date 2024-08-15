@@ -1,46 +1,41 @@
-from typing import Optional
-
 import numpy as np
 
-from nn_from_scratch.functions import ActivationFunction
 from .layer import Layer
 
 
 class Dense(Layer):
-    def __init__(self, neurons: tuple[int], function: ActivationFunction):
+    def __init__(self, neurons: tuple[int]):
         input_size, output_size = neurons
         self.weights = np.random.uniform(-0.5, 0.5, size=(output_size, input_size))
-        self.bias = np.random.uniform(-0.5, 0.5, size=(output_size))
-        self.function = function
+        self.bias = np.random.uniform(-0.5, 0.5, size=(output_size, 1))
+        self.curr_batch = 0
 
         # to be defined later
-        self.previous_layer: Optional[Layer] = None
-        self.next_layer: Optional[Layer] = None
         self.delta = None
         self.input = None
         self.net = None
         self.output = None
 
-    def forward(self, initial_input: Optional[np.ndarray] = None):
-        self.input = (
-            self.previous_layer.output if initial_input is None else initial_input
-        )
-        self.net = (self.input @ self.weights.T) + self.bias
-        self.output = self.function.activate(self.net)
-        if self.next_layer is None:
-            return self.output
-        return self.next_layer.forward()
+    def forward(self, input: np.ndarray):
+        self.input = input
+        self.output = (self.weights @ self.input) + self.bias
+        return self.output
 
-    def gradient_descent(self, error: Optional[np.ndarray] = None):
-        if self.next_layer is None:  # is last layer
-            self.delta = error * self.function.derivative(self.net)
+    def backward(self, output_gradient: np.ndarray, alpha: float, batch_size: int):
+        weights_gradient = output_gradient @ self.input.T
+        input_gradient = self.weights.T @ output_gradient
+
+        if self.curr_batch == 0:
+            self.weights_gradient = weights_gradient
+            self.bias_gradient = output_gradient
         else:
-            self.delta = (
-                self.next_layer.delta @ self.next_layer.weights
-            ) * self.function.derivative(self.net)
+            self.weights_gradient += weights_gradient
+            self.bias_gradient += output_gradient
 
-        gradient_descent = np.array([self.delta]).T @ np.array([self.input])
-        return gradient_descent
+        self.curr_batch += 1
+        if self.curr_batch == batch_size:
+            self.weights -= alpha * (self.weights_gradient / batch_size)
+            self.bias -= alpha * (self.bias_gradient / batch_size)
+            self.curr_batch = 0
 
-    def update_weights(self, alpha: float, gradient_descent: np.ndarray):
-        self.weights += gradient_descent * alpha
+        return input_gradient

@@ -31,12 +31,12 @@ test = { cmd = "pytest python -vv", help = "Run all tests"}
 
 [tool.taskipy.tasks.coverage]
 cmd = '''
-    pytest src/python -vv --cov=src/python/nn_from_scratch &&
+    pytest python -vv --cov=python/nn_from_scratch &&
     coverage html -d /tmp/coverage &&
     firefox /tmp/coverage/index.html
 '''
 help = "Generates the code coverage report"
 
 [tool.taskipy.tasks.format]
-cmd = "isort src/python && ruff format src/python"
+cmd = "isort python && ruff format python"
 help = "Formats the source code of the project"

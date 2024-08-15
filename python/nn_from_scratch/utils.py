@@ -18,12 +18,3 @@ progress = Progress(
     TimeRemainingColumn(),
     TimeElapsedColumn(),
 )
-
-
-def chunks(iterable, chunk_size):
-    """Splits the iterable into chunks of size chunk_size."""
-    while True:
-        chunk = list(islice(iterable, chunk_size))
-        if not chunk:
-            return
-        yield chunk

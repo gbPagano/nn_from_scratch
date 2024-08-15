@@ -1,38 +1,23 @@
 import numpy as np
 
-from nn_from_scratch.functions import ErrorFunction
 from nn_from_scratch.layers import Layer
-from nn_from_scratch.utils import chunks, progress
+from nn_from_scratch.loss import MSE, Loss
+from nn_from_scratch.utils import progress
 
 
 class NeuralNetwork:
     def __init__(self, *layers: Layer):
         self.layers = layers
 
-        # linking the layers
-        for idx, layer in enumerate(self.layers):
-            if idx > 0:
-                layer.previous_layer = self.layers[idx - 1]
-            if idx + 1 < len(self.layers):
-                layer.next_layer = self.layers[idx + 1]
-
-        self.first_layer = self.layers[0]
-        self.last_layer = self.layers[-1]
-
     def _forward(self, x_input: np.ndarray):
-        self.output = self.first_layer.forward(x_input)
+        self.output = x_input
+        for layer in self.layers:
+            self.output = layer.forward(self.output)
         return self.output
 
-    def _backward(self, alpha: float, mean_gradients: np.ndarray):
-        for layer, gradient in zip(reversed(self.layers), mean_gradients):
-            layer.update_weights(alpha, gradient)
-
-    def _get_layers_gradient_descent(self, error: np.ndarray):
-        gradients = []
+    def _backward(self, error, alpha: float, batch_size):
         for layer in reversed(self.layers):
-            gradients.append(layer.gradient_descent(error))
-
-        return gradients
+            error = layer.backward(error, alpha, batch_size)
 
     def fit(
         self,
@@ -43,6 +28,7 @@ class NeuralNetwork:
         alpha: float,
         batch_size: int,
         evaluate_step: int = 5,
+        loss_function: Loss = MSE(),
     ):
         with progress:
             for epoch in progress.track(
@@ -52,23 +38,14 @@ class NeuralNetwork:
                 indexes = np.random.permutation(len(x_train))
                 x_train, y_train = x_train[indexes], y_train[indexes]
 
-                outputs = []
-                for chunk in chunks(zip(x_train, y_train), batch_size):
-                    batch_gradients = []
-                    for x, y in chunk:
-                        out = self._forward(x)
-                        outputs.append(out)
-                        error = y - out
-                        gradients = self._get_layers_gradient_descent(error)
-                        batch_gradients.append(gradients)
+                loss = 0
+                for x, y in zip(x_train, y_train):
+                    out = self._forward(x)
+                    loss += loss_function.loss(y, out)
+                    grad = loss_function.gradient(y, out)
+                    self._backward(grad, alpha, batch_size)
 
-                    mean_gradients = [
-                        np.mean(layer_grad, axis=0)
-                        for layer_grad in zip(*batch_gradients)
-                    ]
-                    self._backward(alpha, mean_gradients)
-
-                if not epoch % evaluate_step:
-                    mse = ErrorFunction().get_mse(y_train, outputs)
+                loss /= len(x_train)
+                if not (epoch % evaluate_step):
                     padding = " " * (len(str(epochs)) - len(str(epoch)))
-                    progress.console.print(f"Epoch: {padding}{epoch} | MSE: {mse}")
+                    progress.console.print(f"Epoch: {padding}{epoch} | Loss: {loss}")

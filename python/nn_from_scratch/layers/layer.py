@@ -7,9 +7,5 @@ class Layer(ABC):
         ...
 
     @abstractmethod
-    def gradient_descent():
-        ...
-
-    @abstractmethod
-    def update_weights():
+    def backward():
         ...

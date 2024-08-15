@@ -1,2 +1,3 @@
-from .layer import Layer
+from .activate import *
 from .dense import Dense
+from .layer import Layer
