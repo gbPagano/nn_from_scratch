@@ -14,3 +14,5 @@ mod tanh;
 pub use tanh::*;
 mod elu;
 pub use elu::*;
+mod relu;
+pub use relu::*;
