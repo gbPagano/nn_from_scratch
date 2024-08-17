@@ -1,6 +1,5 @@
 use ndarray::{array, ArrayD};
 
-use super::Activate;
 use super::Float;
 use super::Layer;
 
@@ -20,14 +19,10 @@ impl<F: Float> Sigmoid<F> {
             input: array![[]].into_dyn(),
         }
     }
-}
-
-impl<F: Float> Activate<F> for Sigmoid<F> {
-    fn activate(&self, input: &ArrayD<F>) -> ArrayD<F> {
+    pub fn activate(&self, input: &ArrayD<F>) -> ArrayD<F> {
         input.mapv(|x| F::from_f32(1.0).unwrap() / (F::from_f32(1.0).unwrap() + F::exp(-x)))
     }
-
-    fn derivative(&self, input: &ArrayD<F>) -> ArrayD<F> {
+    pub fn derivative(&self, input: &ArrayD<F>) -> ArrayD<F> {
         let activation = self.activate(input);
         &activation * (&-activation.clone() + F::from_f32(1.0).unwrap())
     }

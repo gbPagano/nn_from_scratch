@@ -1,6 +1,5 @@
 use ndarray::{array, ArrayD};
 
-use super::Activate;
 use super::Float;
 use super::Layer;
 
@@ -16,14 +15,7 @@ impl<F: Float> ELU<F> {
             alpha,
         }
     }
-}
-impl<F: Float> Default for ELU<F> {
-    fn default() -> Self {
-        Self::new(F::from_f32(1.0).unwrap())
-    }
-}
-impl<F: Float> Activate<F> for ELU<F> {
-    fn activate(&self, array: &ArrayD<F>) -> ArrayD<F> {
+    pub fn activate(&self, array: &ArrayD<F>) -> ArrayD<F> {
         array.mapv(|x| {
             if x >= F::from_f32(0.0).unwrap() {
                 x
@@ -32,8 +24,7 @@ impl<F: Float> Activate<F> for ELU<F> {
             }
         })
     }
-
-    fn derivative(&self, array: &ArrayD<F>) -> ArrayD<F> {
+    pub fn derivative(&self, array: &ArrayD<F>) -> ArrayD<F> {
         array.mapv(|x| {
             if x >= F::from_f32(0.0).unwrap() {
                 F::from_f32(1.0).unwrap()
@@ -41,6 +32,11 @@ impl<F: Float> Activate<F> for ELU<F> {
                 self.alpha * (x.exp() - F::from_f32(1.0).unwrap()) + self.alpha
             }
         })
+    }
+}
+impl<F: Float> Default for ELU<F> {
+    fn default() -> Self {
+        Self::new(F::from_f32(1.0).unwrap())
     }
 }
 

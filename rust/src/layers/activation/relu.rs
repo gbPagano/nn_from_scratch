@@ -1,6 +1,5 @@
 use ndarray::{array, ArrayD};
 
-use super::Activate;
 use super::Float;
 use super::Layer;
 
@@ -14,14 +13,7 @@ impl<F: Float> ReLU<F> {
             input: array![[]].into_dyn(),
         }
     }
-}
-impl<F: Float> Default for ReLU<F> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-impl<F: Float> Activate<F> for ReLU<F> {
-    fn activate(&self, array: &ArrayD<F>) -> ArrayD<F> {
+    pub fn activate(&self, array: &ArrayD<F>) -> ArrayD<F> {
         array.mapv(|x| {
             if x >= F::from_f32(0.0).unwrap() {
                 x
@@ -30,8 +22,7 @@ impl<F: Float> Activate<F> for ReLU<F> {
             }
         })
     }
-
-    fn derivative(&self, array: &ArrayD<F>) -> ArrayD<F> {
+    pub fn derivative(&self, array: &ArrayD<F>) -> ArrayD<F> {
         array.mapv(|x| {
             if x >= F::from_f32(0.0).unwrap() {
                 F::from_f32(1.0).unwrap()
@@ -41,7 +32,11 @@ impl<F: Float> Activate<F> for ReLU<F> {
         })
     }
 }
-
+impl<F: Float> Default for ReLU<F> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl<F: Float> Layer<F> for ReLU<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
         self.input = input;
