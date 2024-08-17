@@ -47,22 +47,11 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             .collect();
 
         term::init(stderr().is_terminal());
-        let mut pb = RichProgress::new(
-            tqdm!(total = config.epochs),
-            vec![
-                Column::Text("Training...".to_owned()),
-                Column::Animation,
-                Column::Percentage(1),
-                Column::Text("•".to_owned()),
-                Column::CountTotal,
-                Column::Text("•".to_owned()),
-                Column::RemainingTime,
-                Column::Text(" ".to_owned()),
-            ],
-        );
+        let mut pb = self.get_bar(config.epochs);
         if self.terminal_output {
-            pb.refresh().unwrap();
+            pb.update(0).unwrap();
         }
+
         let mut permutation: Vec<usize> = (0..x_train.len()).collect();
         let mut rng = rand::thread_rng();
         for epoch in 1..=config.epochs {
@@ -93,13 +82,26 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             }
             if self.terminal_output {
                 pb.update(1).unwrap();
-                pb.refresh().unwrap();
             }
         }
-        if self.terminal_output {
-            pb.refresh().unwrap();
-            eprintln!("Time spent during training: {}", pb.pb.fmt_elapsed_time());
-        }
+    }
+
+    fn get_bar(&self, total: usize) -> RichProgress {
+        RichProgress::new(
+            tqdm!(total = total, ncols = 40, force_refresh = true),
+            vec![
+                Column::Text("Training...".to_owned()),
+                Column::Animation,
+                Column::Percentage(1),
+                Column::Text("•".to_owned()),
+                Column::CountTotal,
+                Column::Text("•".to_owned()),
+                Column::ElapsedTime,
+                Column::Text("<".to_owned()),
+                Column::RemainingTime,
+                Column::Text(" ".to_owned()),
+            ],
+        )
     }
 }
 

@@ -23,17 +23,18 @@ fn main() {
         Dense::new(28, 19),
         ELU::new(1.0 as F),
         Dense::new(19, 10),
-        TanH::new()
+        //TanH::new()
+        SoftmaxCE::new()
     ]);
     nn.fit(
         &x_train,
         &y_train,
         NNConfig {
             epochs: 100,
-            learning_rate: 0.02,
+            learning_rate: 0.01,
             batch_size: 8,
-            evaluate_step: 1,
-            loss_function: MSE::new().into(),
+            evaluate_step: 5,
+            loss_function: CrossEntropySoftmax::new().into(),
         },
     );
     kaggle_predictions(&mut nn);
@@ -56,7 +57,7 @@ fn load_mnist_dataset() -> (Array3<F>, Array3<F>) {
     let y_train = data_train.column(0).to_owned();
     let y_train = y_train
         .iter()
-        .map(|&n| number_to_neurons::<F>(n as usize, -1.0, 1.0))
+        .map(|&n| number_to_neurons::<F>(n as usize, 0.0, 1.0))
         .collect::<Vec<_>>();
     let y_train: Array2<F> = Array::from_shape_vec(
         (y_train.len(), y_train[0].len()),
