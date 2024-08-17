@@ -2,7 +2,7 @@ use ndarray::ScalarOperand;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
 use num_traits::float;
 use num_traits::FromPrimitive;
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 use std::iter::Sum;
 use std::marker::{Send, Sync};
 use std::ops::{AddAssign, DivAssign, SubAssign};
@@ -21,6 +21,7 @@ pub trait Float:
     + SubAssign
     + DivAssign
     + Display
+    + Debug
     + Sum
     + Send
     + Sync
