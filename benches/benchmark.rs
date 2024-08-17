@@ -10,7 +10,6 @@ use nn_from_scratch::*;
 mod utils;
 use utils::*;
 
-
 fn bench_layers(c: &mut Criterion) {
     let mut group = c.benchmark_group("Dense Layers");
     let (mut layer_a, mut layer_b, mut activate, _, inputs, _) = simple_layers_a();
@@ -48,13 +47,17 @@ fn bench_nn(c: &mut Criterion) {
                 (x_train, y_train)
             },
             |(x_train, y_train)| {
-                nn.fit(black_box(&x_train), black_box(&y_train), NNConfig {
-                    epochs: 100, 
-                    evaluate_step: 100,
-                    loss_function: HalfMSE::new().into(),
-                    batch_size: 1,
-                    learning_rate: 0.5,
-                });
+                nn.fit(
+                    black_box(&x_train),
+                    black_box(&y_train),
+                    NNConfig {
+                        epochs: 100,
+                        evaluate_step: 100,
+                        loss_function: HalfMSE::new().into(),
+                        batch_size: 1,
+                        learning_rate: 0.5,
+                    },
+                );
             },
         );
     });
@@ -78,13 +81,17 @@ fn bench_nn(c: &mut Criterion) {
                 (nn, x_train.clone(), y_train.clone())
             },
             |(mut nn, x_train, y_train)| {
-                nn.fit(black_box(&x_train), black_box(&y_train), NNConfig {
-                    epochs: 1, 
-                    evaluate_step: 100,
-                    loss_function: HalfMSE::new().into(),
-                    batch_size: 8,
-                    learning_rate: 0.02,
-                });
+                nn.fit(
+                    black_box(&x_train),
+                    black_box(&y_train),
+                    NNConfig {
+                        epochs: 1,
+                        evaluate_step: 100,
+                        loss_function: HalfMSE::new().into(),
+                        batch_size: 8,
+                        learning_rate: 0.02,
+                    },
+                );
             },
         );
     });
