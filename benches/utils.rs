@@ -2,7 +2,7 @@ extern crate blas_src;
 
 use csv::ReaderBuilder;
 use ndarray::prelude::*;
-use ndarray::{array, Array2, Array3, ArrayD};
+use ndarray::{array, Array2, ArrayD};
 use ndarray_csv::Array2Reader;
 use num_traits::Float;
 
@@ -70,7 +70,7 @@ pub fn simple_nn() -> (NeuralNetwork<'static, f64>, ArrayD<f64>, ArrayD<f64>) {
     (nn, inputs, desired)
 }
 
-pub fn mnist_f32() -> (Array3<f32>, Array3<f32>) {
+pub fn mnist_f32() -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>) {
     type F = f32;
 
     let file = File::open("datasets/kaggle_mnist/train.csv").unwrap();
@@ -94,11 +94,17 @@ pub fn mnist_f32() -> (Array3<f32>, Array3<f32>) {
     let x_train = x_train
         .insert_axis(ndarray::Axis(2))
         .into_dimensionality::<Ix3>()
-        .unwrap();
+        .unwrap()
+        .axis_iter(Axis(0))
+        .map(|item| item.into_owned().into_dyn())
+        .collect();
     let y_train = y_train
         .insert_axis(ndarray::Axis(2))
         .into_dimensionality::<Ix3>()
-        .unwrap();
+        .unwrap()
+        .axis_iter(Axis(0))
+        .map(|item| item.into_owned().into_dyn())
+        .collect();
 
     (x_train, y_train)
 }

@@ -1,7 +1,6 @@
 extern crate blas_src;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ndarray::*;
 use nn_from_scratch::layers::activation::*;
 use nn_from_scratch::layers::*;
 use nn_from_scratch::loss::*;
@@ -34,17 +33,9 @@ fn bench_nn(c: &mut Criterion) {
     group.bench_function("simple nn fit", |b| {
         b.iter_with_setup(
             || {
-                let x_train = inputs
-                    .clone()
-                    .insert_axis(ndarray::Axis(0))
-                    .into_dimensionality::<Ix3>()
-                    .unwrap();
-                let y_train = desired
-                    .clone()
-                    .insert_axis(ndarray::Axis(0))
-                    .into_dimensionality::<Ix3>()
-                    .unwrap();
-                (x_train, y_train)
+                let x_train = vec![inputs.clone()];
+                let y_train = vec![desired.clone()];
+               (x_train, y_train)
             },
             |(x_train, y_train)| {
                 nn.fit(
