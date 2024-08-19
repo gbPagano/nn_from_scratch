@@ -23,7 +23,6 @@ fn main() {
         Dense::new(28, 19),
         ELU::new(1.0 as F),
         Dense::new(19, 10),
-        //TanH::new()
         SoftmaxCE::new()
     ]);
     nn.fit(
@@ -46,7 +45,7 @@ fn number_to_neurons<F: Float>(n: usize, negative_output: F, positive_output: F)
     res
 }
 
-fn load_mnist_dataset() -> (Array3<F>, Array3<F>) {
+fn load_mnist_dataset() -> (Vec<ArrayD<F>>, Vec<ArrayD<F>>) {
     let file = File::open("datasets/kaggle_mnist/train.csv").unwrap();
     let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
     let data_train: Array2<F> = reader.deserialize_array2_dynamic().unwrap();
@@ -68,11 +67,17 @@ fn load_mnist_dataset() -> (Array3<F>, Array3<F>) {
     let x_train = x_train
         .insert_axis(ndarray::Axis(2))
         .into_dimensionality::<Ix3>()
-        .unwrap();
+        .unwrap()
+        .axis_iter(Axis(0))
+        .map(|item| item.into_owned().into_dyn())
+        .collect();
     let y_train = y_train
         .insert_axis(ndarray::Axis(2))
         .into_dimensionality::<Ix3>()
-        .unwrap();
+        .unwrap()
+        .axis_iter(Axis(0))
+        .map(|item| item.into_owned().into_dyn())
+        .collect();
 
     (x_train, y_train)
 }

@@ -1,7 +1,7 @@
 extern crate blas_src;
 
 use kdam::{term, term::Colorizer, tqdm, BarExt, Column, RichProgress};
-use ndarray::{Array3, ArrayD, Axis};
+use ndarray::ArrayD;
 use rand::seq::SliceRandom;
 use std::io::{stderr, IsTerminal};
 
@@ -36,16 +36,7 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         }
     }
 
-    pub fn fit(&mut self, x_train: &Array3<F>, y_train: &Array3<F>, config: NNConfig<F>) {
-        let x_train: Vec<ArrayD<_>> = x_train
-            .axis_iter(Axis(0))
-            .map(|item| item.into_owned().into_dyn())
-            .collect();
-        let y_train: Vec<ArrayD<_>> = y_train
-            .axis_iter(Axis(0))
-            .map(|item| item.into_owned().into_dyn())
-            .collect();
-
+    pub fn fit(&mut self, x_train: &[ArrayD<F>], y_train: &[ArrayD<F>], config: NNConfig<F>) {
         term::init(stderr().is_terminal());
         let mut pb = self.get_bar(config.epochs);
         if self.terminal_output {
@@ -68,15 +59,19 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             }
             loss /= F::from_usize(x_train.len()).unwrap();
             if self.terminal_output && epoch % config.evaluate_step == 0 {
-                let epoch_str = format!(
-                    "{: >width$}",
-                    epoch,
-                    width = config.epochs.to_string().len()
-                );
+                let train_accuracy = self.evaluate(x_train, y_train);
                 pb.write(format!(
-                    "Epoch: {} | Loss: {:}",
-                    epoch_str.to_string().colorize("bold cyan"),
-                    loss.to_string().colorize("bold cyan")
+                    "Epoch: {} | Loss: {} | Train Accuracy: {}",
+                    format!(
+                        "{: >width$}",
+                        epoch,
+                        width = config.epochs.to_string().len()
+                    )
+                    .colorize("bold cyan"),
+                    format!("{:.8}", loss).to_string().colorize("bold cyan"),
+                    format!("{:.4}", train_accuracy)
+                        .to_string()
+                        .colorize("bold cyan")
                 ))
                 .unwrap();
             }
@@ -84,6 +79,28 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
                 pb.update(1).unwrap();
             }
         }
+    }
+
+    pub fn evaluate(&mut self, x_vec: &[ArrayD<F>], y_vec: &[ArrayD<F>]) -> f64 {
+        let total = y_vec.len();
+        let mut correct = 0;
+        for (x, y) in x_vec.iter().zip(y_vec.iter()) {
+            let out = self.forward(x.to_owned().into_dyn());
+            let (pred, _) = out
+                .iter()
+                .enumerate()
+                .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).unwrap())
+                .unwrap();
+            let (real, _) = y
+                .iter()
+                .enumerate()
+                .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).unwrap())
+                .unwrap();
+            if pred == real {
+                correct += 1;
+            }
+        }
+        correct as f64 / total as f64
     }
 
     fn get_bar(&self, total: usize) -> RichProgress {
@@ -148,7 +165,7 @@ mod tests {
     use super::super::layers::*;
     use super::*;
     use approx::assert_abs_diff_eq;
-    use ndarray::{array, Ix3};
+    use ndarray::{array, Axis};
     use rstest::*;
 
     #[fixture]
@@ -197,14 +214,8 @@ mod tests {
     fn test_nn_backward(simple_nn: (NeuralNetwork<f64>, ArrayD<f64>, ArrayD<f64>)) {
         let (mut nn, inputs, desired) = simple_nn;
 
-        let x_train = inputs
-            .insert_axis(ndarray::Axis(0))
-            .into_dimensionality::<Ix3>()
-            .unwrap();
-        let y_train = desired
-            .insert_axis(ndarray::Axis(0))
-            .into_dimensionality::<Ix3>()
-            .unwrap();
+        let x_train = vec![inputs];
+        let y_train = vec![desired];
 
         nn.fit(&x_train, &y_train, NNConfig::default());
 
@@ -226,6 +237,14 @@ mod tests {
 
         let x_train = array![[[0.05], [0.1]], [[0.05], [0.1]]];
         let y_train = array![[[0.01], [0.99]], [[0.01], [0.99]]];
+        let x_train: Vec<ArrayD<_>> = x_train
+            .axis_iter(Axis(0))
+            .map(|item| item.into_owned().into_dyn())
+            .collect();
+        let y_train: Vec<ArrayD<_>> = y_train
+            .axis_iter(Axis(0))
+            .map(|item| item.into_owned().into_dyn())
+            .collect();
 
         let mut config = NNConfig::default();
         config.batch_size = 2;
