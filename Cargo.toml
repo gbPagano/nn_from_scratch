@@ -13,6 +13,7 @@ csv = "1.3.0"
 itertools = "0.12.1"
 kdam = { version = "0.5.1", features = ["rich"] }
 ndarray = { version = "0.15.6", features = ["blas", "approx-0_5", "serde"] }
+ndarray-conv = "0.3.3"
 ndarray-csv = "0.5.2"
 ndarray-rand = "0.14.0"
 ndarray-stats = "0.5.1"

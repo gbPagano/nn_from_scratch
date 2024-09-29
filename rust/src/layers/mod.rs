@@ -5,6 +5,8 @@ use ndarray::ArrayD;
 pub mod activation;
 mod dense;
 pub use dense::*;
+mod conv;
+pub use conv::*;
 
 pub trait Layer<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F>;

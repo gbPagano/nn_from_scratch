@@ -1,11 +1,11 @@
 use ndarray::ScalarOperand;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
-use num_traits::float;
-use num_traits::FromPrimitive;
+use num_traits::{float, NumAssign, FromPrimitive};
 use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::marker::{Send, Sync};
 use std::ops::{AddAssign, DivAssign, SubAssign};
+use ndarray::DataMut;
 
 pub mod layers;
 pub mod loss;
@@ -22,6 +22,8 @@ pub trait Float:
     + DivAssign
     + Display
     + Debug
+    + Copy
+    + NumAssign
     + Sum
     + Send
     + Sync
