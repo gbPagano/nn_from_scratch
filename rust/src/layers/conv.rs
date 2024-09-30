@@ -63,7 +63,7 @@ impl<F: Float> Layer<F> for Conv<F> {
         for w in self.weights.outer_iter() {
             output.push(
                 self.input
-                    .conv(&w, ConvMode::Valid, PaddingMode::Zeros)
+                    .conv_fft(&w, ConvMode::Valid, PaddingMode::Zeros)
                     .unwrap(),
             );
         }
@@ -92,7 +92,7 @@ impl<F: Float> Layer<F> for Conv<F> {
                     &self
                         .input
                         .index_axis(Axis(0), j)
-                        .conv(
+                        .conv_fft(
                             &output_gradient.index_axis(Axis(0), i),
                             ConvMode::Valid,
                             PaddingMode::Zeros,
@@ -102,7 +102,7 @@ impl<F: Float> Layer<F> for Conv<F> {
                 input_gradient.slice_mut(s![j, .., ..]).zip_mut_with(
                     &output_gradient
                         .index_axis(Axis(0), i)
-                        .conv(
+                        .conv_fft(
                             &self.weights.slice(s![i, j, ..;-1, ..;-1]),
                             ConvMode::Full,
                             PaddingMode::Zeros,
@@ -256,13 +256,14 @@ mod tests {
         ]);
 
         let out = conv_layer.forward(input);
-        assert_eq!(
+        assert_abs_diff_eq!(
             out,
             arr3(&[
                 [[10., 12., 16., 17.], [8., 12., 14., 13.]],
                 [[6., 10., 40., 35.], [21., 20., 35., 25.]]
             ])
-            .into_dyn()
+            .into_dyn(),
+            epsilon = 1e-2
         );
     }
 
@@ -312,13 +313,14 @@ mod tests {
 
         let error = real.into_dyn() - pred;
         let input_grad = conv_layer.backward(error, 0.5, 1);
-        assert_eq!(
+        assert_abs_diff_eq!(
             conv_layer.get_weights().unwrap().index_axis(Axis(0), 0),
             arr3(&[
                 [[-2.5, -2.0, 0.0], [-1.0, -2.0, -2.5], [-2.0, -4.0, -1.5]],
                 [[-6.5, -4.0, -1.5], [-2.0, -5.5, -5.0], [-5.5, -8.0, -4.5]]
             ])
-            .into_dyn()
+            .into_dyn(),
+            epsilon = 1e-2
         );
         assert_abs_diff_eq!(
             conv_layer.get_weights().unwrap().index_axis(Axis(0), 1),

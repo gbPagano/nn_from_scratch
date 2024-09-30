@@ -784,6 +784,7 @@ dependencies = [
  "openblas-src",
  "rand",
  "rstest",
+ "rustfft",
  "serde",
  "serde_json",
 ]

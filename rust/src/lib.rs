@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::marker::{Send, Sync};
 use std::ops::{AddAssign, DivAssign, SubAssign};
-use ndarray::DataMut;
+use rustfft::FftNum;
 
 pub mod layers;
 pub mod loss;
@@ -27,6 +27,7 @@ pub trait Float:
     + Sum
     + Send
     + Sync
+    + FftNum
 {
 }
 impl Float for f32 {}
