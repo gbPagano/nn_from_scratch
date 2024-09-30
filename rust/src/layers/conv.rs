@@ -1,6 +1,6 @@
 extern crate blas_src;
 
-use ndarray::{arr3, concatenate,Array3, ArrayD, Axis, Ix2, Ix3};
+use ndarray::*;
 use ndarray_conv::*;
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
@@ -9,23 +9,24 @@ use super::super::Float;
 use super::Layer;
 
 pub struct Conv<F: Float> {
-    pub weights: Vec<Array3<F>>,
+    pub weights: Array4<F>,
     pub bias: Array3<F>,
     input: Array3<F>,
+    curr_batch: usize,
+    input_shape: (usize, usize, usize),
+    weights_gradient: Array4<F>,
+    bias_gradient: Array3<F>,
 }
 
 impl<F: Float> Conv<F> {
     pub fn new(input_shape: (usize, usize, usize), kernels: usize, kernel_size: usize) -> Self {
         let (input_depth, input_height, input_width) = input_shape;
 
-        let weights: Vec<_> = (0..kernels)
-            .map(|_| {
-                Array3::random(
-                    (input_depth, kernel_size, kernel_size),
-                    Uniform::new(F::from_f32(-0.5).unwrap(), F::from_f32(0.5).unwrap()),
-                )
-            })
-            .collect();
+        let weights = Array4::random(
+            (kernels, input_depth, kernel_size, kernel_size),
+            Uniform::new(F::from_f32(-0.5).unwrap(), F::from_f32(0.5).unwrap()),
+        );
+
         let bias = Array3::random(
             (
                 kernels,
@@ -39,6 +40,10 @@ impl<F: Float> Conv<F> {
             weights,
             bias,
             input: arr3(&[[[]]]),
+            curr_batch: 0,
+            input_shape,
+            bias_gradient: arr3(&[[[]]]),
+            weights_gradient: Array4::zeros((kernels, input_depth, kernel_size, kernel_size)),
         }
     }
 }
@@ -55,10 +60,10 @@ impl<F: Float> Layer<F> for Conv<F> {
         };
 
         let mut output = Vec::new();
-        for w in self.weights.iter() {
+        for w in self.weights.outer_iter() {
             output.push(
                 self.input
-                    .conv(w, ConvMode::Valid, PaddingMode::Zeros)
+                    .conv(&w, ConvMode::Valid, PaddingMode::Zeros)
                     .unwrap(),
             );
         }
@@ -77,15 +82,67 @@ impl<F: Float> Layer<F> for Conv<F> {
         learning_rate: F,
         batch_size: usize,
     ) -> ArrayD<F> {
-        output_gradient
+        let output_gradient = output_gradient.into_dimensionality::<Ix3>().unwrap();
+        let mut weights_gradient: Array4<F> = Array4::zeros(self.weights.dim());
+        let mut input_gradient: Array3<F> = Array3::zeros(self.input_shape);
+
+        for i in 0..self.weights.dim().0 {
+            for j in 0..self.weights.dim().1 {
+                weights_gradient.slice_mut(s![i, j, .., ..]).assign(
+                    &self
+                        .input
+                        .index_axis(Axis(0), j)
+                        .conv(
+                            &output_gradient.index_axis(Axis(0), i),
+                            ConvMode::Valid,
+                            PaddingMode::Zeros,
+                        )
+                        .unwrap(),
+                );
+                input_gradient.slice_mut(s![j, .., ..]).zip_mut_with(
+                    &output_gradient
+                        .index_axis(Axis(0), i)
+                        .conv(
+                            &self.weights.slice(s![i, j, ..;-1, ..;-1]),
+                            ConvMode::Full,
+                            PaddingMode::Zeros,
+                        )
+                        .unwrap(),
+                    |x, &y| *x += y,
+                );
+            }
+        }
+
+        if self.curr_batch == 0 {
+            self.weights_gradient = weights_gradient;
+            self.bias_gradient = output_gradient;
+        } else {
+            self.weights_gradient += &weights_gradient;
+            self.bias_gradient += &output_gradient;
+        }
+        // gradient descent as optimizer
+        self.curr_batch += 1;
+        if self.curr_batch == batch_size {
+            Zip::from(&mut self.weights)
+                .and(&self.weights_gradient)
+                .for_each(|a, &b| *a -= b * learning_rate / F::from_usize(batch_size).unwrap());
+
+            Zip::from(&mut self.bias)
+                .and(&self.bias_gradient)
+                .for_each(|a, &b| *a -= b * learning_rate / F::from_usize(batch_size).unwrap());
+
+            self.curr_batch = 0;
+        }
+
+        input_gradient.into_dyn()
     }
 
     fn get_weights(&self) -> Option<ArrayD<F>> {
-        None
+        Some(self.weights.clone().into_dyn())
     }
 
     fn get_bias(&self) -> Option<ArrayD<F>> {
-        None
+        Some(self.bias.clone().into_dyn())
     }
 }
 
@@ -98,7 +155,8 @@ impl<F: Float> From<Conv<F>> for Box<dyn Layer<F>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::arr2;
+    use crate::layers::activation::SoftmaxCE;
+    use approx::assert_abs_diff_eq;
 
     #[test]
     fn conv_forward_a() {
@@ -109,13 +167,12 @@ mod tests {
             [1., 1., 2., 3., 1., 0.],
         ])
         .into_dyn();
-        let kernel = arr3(&[[[1., 0., 1.], [0., 1., 0.], [1., 0., 1.]]]);
+        let kernel = arr3(&[[[1., 0., 1.], [0., 1., 0.], [1., 0., 1.]]]).insert_axis(Axis(0));
 
         let mut conv_layer: Conv<f32> = Conv::new((1, 4, 6), 1, 3);
-        assert_eq!(conv_layer.weights.len(), 1);
-        assert_eq!(conv_layer.weights[0].dim(), (1, 3, 3));
+        assert_eq!(conv_layer.weights.dim(), (1, 1, 3, 3));
         assert_eq!(conv_layer.bias.dim(), (1, 2, 4));
-        conv_layer.weights[0] = kernel;
+        conv_layer.weights = kernel;
         conv_layer.bias = arr3(&[[[0., 0., 0., 1.], [0., 0., 0., 1.]]]);
 
         let out = conv_layer.forward(input);
@@ -145,13 +202,13 @@ mod tests {
         let kernel = arr3(&[
             [[1., 0., 1.], [0., 1., 0.], [1., 0., 1.]],
             [[0.5, 0., 0.5], [0., 0.5, 0.], [0.5, 0., 0.5]],
-        ]);
+        ])
+        .insert_axis(Axis(0));
 
         let mut conv_layer: Conv<f32> = Conv::new((2, 4, 6), 1, 3);
-        assert_eq!(conv_layer.weights.len(), 1);
-        assert_eq!(conv_layer.weights[0].dim(), (2, 3, 3));
+        assert_eq!(conv_layer.weights.dim(), (1, 2, 3, 3));
         assert_eq!(conv_layer.bias.dim(), (1, 2, 4));
-        conv_layer.weights[0] = kernel;
+        conv_layer.weights = kernel;
         conv_layer.bias = arr3(&[[[0., 0., 0., 1.], [0., 0., 0., 1.]]]);
 
         let out = conv_layer.forward(input);
@@ -187,13 +244,12 @@ mod tests {
             [[0., 1., 0.], [1., 0., 1.], [0., 1., 0.]],
             [[0., 2., 0.], [2., 0., 2.], [0., 2., 0.]],
         ]);
+        let kernel = stack![Axis(0), kernel_a, kernel_b];
 
         let mut conv_layer: Conv<f32> = Conv::new((2, 4, 6), 2, 3);
-        assert_eq!(conv_layer.weights.len(), 2);
-        assert_eq!(conv_layer.weights[0].dim(), (2, 3, 3));
+        assert_eq!(conv_layer.weights.dim(), (2, 2, 3, 3));
         assert_eq!(conv_layer.bias.dim(), (2, 2, 4));
-        conv_layer.weights[0] = kernel_a;
-        conv_layer.weights[1] = kernel_b;
+        conv_layer.weights = kernel;
         conv_layer.bias = arr3(&[
             [[0., 0., 0., 1.], [0., 0., 0., 1.]],
             [[1., 0., 0., 0.], [1., 0., 0., 0.]],
@@ -207,6 +263,98 @@ mod tests {
                 [[6., 10., 40., 35.], [21., 20., 35., 25.]]
             ])
             .into_dyn()
+        );
+    }
+
+    #[test]
+    fn conv_backward() {
+        let input = arr3(&[
+            [
+                [2., 0., 0., 4., 4., 0.],
+                [1., 1., 0., 0., 2., 0.],
+                [1., 0., 1., 2., 3., 0.],
+                [1., 1., 2., 3., 1., 0.],
+            ],
+            [
+                [4., 0., 0., 8., 8., 0.],
+                [2., 2., 0., 0., 4., 0.],
+                [2., 0., 2., 4., 6., 0.],
+                [2., 2., 4., 6., 2., 0.],
+            ],
+        ])
+        .into_dyn();
+
+        let kernel_a = arr3(&[
+            [[1., 0., 1.], [0., 1., 0.], [1., 0., 1.]],
+            [[0.5, 0., 0.5], [0., 0.5, 0.], [0.5, 0., 0.5]],
+        ]);
+        let kernel_b = arr3(&[
+            [[0., 1., 0.], [1., 0., 1.], [0., 1., 0.]],
+            [[0., 2., 0.], [2., 0., 2.], [0., 2., 0.]],
+        ]);
+        let kernel = stack![Axis(0), kernel_a, kernel_b];
+
+        let mut conv_layer: Conv<f32> = Conv::new((2, 4, 6), 2, 3);
+        assert_eq!(conv_layer.weights.dim(), (2, 2, 3, 3));
+        assert_eq!(conv_layer.bias.dim(), (2, 2, 4));
+        conv_layer.weights = kernel;
+        conv_layer.bias = arr3(&[
+            [[0., 0., 0., 1.], [0., 0., 0., 1.]],
+            [[1., 0., 0., 0.], [1., 0., 0., 0.]],
+        ]);
+
+        let conv_out = conv_layer.forward(input);
+        let pred = SoftmaxCE::default().forward(conv_out);
+        let real = arr3(&[
+            [[1., 0., 0., 1.], [0., 1., 1., 0.]],
+            [[0., 1., 1., 0.], [1., 0., 0., 1.]],
+        ]);
+
+        let error = real.into_dyn() - pred;
+        let input_grad = conv_layer.backward(error, 0.5, 1);
+        assert_eq!(
+            conv_layer.get_weights().unwrap().index_axis(Axis(0), 0),
+            arr3(&[
+                [[-2.5, -2.0, 0.0], [-1.0, -2.0, -2.5], [-2.0, -4.0, -1.5]],
+                [[-6.5, -4.0, -1.5], [-2.0, -5.5, -5.0], [-5.5, -8.0, -4.5]]
+            ])
+            .into_dyn()
+        );
+        assert_abs_diff_eq!(
+            conv_layer.get_weights().unwrap().index_axis(Axis(0), 1),
+            arr3(&[
+                [
+                    [-0.4867033, -0.5132971, -2.0199459],
+                    [-0.9966755, -1.4867028, 0.49667543],
+                    [-1.9933513, -0.49335182, -2.0166214]
+                ],
+                [
+                    [-0.9734066, -1.0265942, -4.0398917],
+                    [-1.993351, -2.9734056, 0.99335086],
+                    [-3.9867027, -0.98670363, -4.0332427]
+                ]
+            ])
+            .into_dyn(),
+            epsilon = 1e-4
+        );
+        assert_abs_diff_eq!(
+            input_grad,
+            arr3(&[
+                [
+                    [1.0, -6.83e-13, 2.0, 1.013, -0.006, 1.0],
+                    [-1.4186888e-14, 4.0, 1.0132971, 1.9867033, 3.0132968, -0.006],
+                    [2.0, -2.03e-9, 3.993, 3.01, -0.013, 1.99],
+                    [-1.24e-14, 2.0, 1.0, 0.99, 1.99, -1.85e-12]
+                ],
+                [
+                    [0.5, -3.44e-13, 2.5, 0.52, -0.013, 0.5],
+                    [-9.63e-15, 5.0, 0.526, 2.473, 3.02, -0.013296704],
+                    [2.5, -4.06e-9, 4.986, 3.026, -0.026, 2.4999995],
+                    [-6.24e-15, 2.5, 0.5, 0.4867033, 2.4999995, -9.272684e-13]
+                ]
+            ])
+            .into_dyn(),
+            epsilon = 1e-2
         );
     }
 }
