@@ -7,6 +7,8 @@ mod dense;
 pub use dense::*;
 mod conv;
 pub use conv::*;
+mod flatten;
+pub use flatten::*;
 
 pub trait Layer<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F>;
