@@ -9,6 +9,8 @@ mod conv;
 pub use conv::*;
 mod flatten;
 pub use flatten::*;
+mod pooling;
+pub use pooling::*;
 
 pub trait Layer<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F>;
