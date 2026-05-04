@@ -78,7 +78,10 @@ fn main() {
 }
 
 fn default_prediction_path() -> String {
-    format!("kaggle-submission-{}.csv", Local::now().format("%Y%m%d%H%M"))
+    format!(
+        "kaggle-submission-{}.csv",
+        Local::now().format("%Y%m%d%H%M")
+    )
 }
 
 fn build_network(seed: Option<u64>) -> NeuralNetwork<'static, F> {
@@ -147,9 +150,6 @@ fn load_mnist_dataset(path: &str) -> (Vec<ArrayD<F>>, Vec<ArrayD<F>>) {
         .map(|item| item.into_owned().into_dyn())
         .collect();
     let y_train = y_train
-        .insert_axis(ndarray::Axis(2))
-        .into_dimensionality::<Ix3>()
-        .unwrap()
         .axis_iter(Axis(0))
         .map(|item| item.into_owned().into_dyn())
         .collect();
@@ -177,19 +177,28 @@ fn kaggle_predictions(nn: &mut NeuralNetwork<F>, test_path: &str, prediction_pat
     let n_test = x_test.shape()[0];
     let x_test = x_test.into_shape((n_test, 1, 28, 28)).unwrap();
 
-    let mut predictions: Vec<Row> = Vec::new();
-    for (idx, x) in x_test.axis_iter(Axis(0)).enumerate() {
-        let out = nn.forward(x.to_owned().into_dyn());
-        let (res, _) = out
-            .iter()
-            .enumerate()
-            .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).unwrap())
-            .unwrap();
-
-        predictions.push(Row {
-            image_id: idx + 1,
-            label: res,
-        })
+    let batch_size = 64;
+    let mut predictions: Vec<Row> = Vec::with_capacity(n_test);
+    for chunk_start in (0..n_test).step_by(batch_size) {
+        let end = (chunk_start + batch_size).min(n_test);
+        let batch = x_test
+            .slice(s![chunk_start..end, .., .., ..])
+            .to_owned()
+            .into_dyn();
+        let out = nn.forward(batch);
+        let out2 = out.view().into_dimensionality::<Ix2>().unwrap();
+        for row in out2.outer_iter() {
+            let label = row
+                .iter()
+                .enumerate()
+                .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).unwrap())
+                .map(|(i, _)| i)
+                .unwrap();
+            predictions.push(Row {
+                image_id: predictions.len() + 1,
+                label,
+            });
+        }
     }
 
     {

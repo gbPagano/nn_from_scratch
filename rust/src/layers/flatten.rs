@@ -7,34 +7,29 @@ use super::Layer;
 
 pub struct Flatten {
     input_shape: (usize, usize, usize),
-    output_shape: (usize, usize),
+    flat_size: usize,
 }
 
 impl Flatten {
     pub fn new(input_shape: (usize, usize, usize)) -> Self {
-        let output_shape = (input_shape.0 * input_shape.1 * input_shape.2, 1);
+        let flat_size = input_shape.0 * input_shape.1 * input_shape.2;
         Self {
             input_shape,
-            output_shape,
+            flat_size,
         }
     }
 }
 
 impl<F: Float> Layer<F> for Flatten {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        input.into_shape(self.output_shape).unwrap().into_dyn()
+        let b = input.shape()[0];
+        input.into_shape((b, self.flat_size)).unwrap().into_dyn()
     }
 
-    fn backward(
-        &mut self,
-        output_gradient: ArrayD<F>,
-        _learning_rate: F,
-        _batch_size: usize,
-    ) -> ArrayD<F> {
-        output_gradient
-            .into_shape(self.input_shape)
-            .unwrap()
-            .into_dyn()
+    fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
+        let b = output_gradient.shape()[0];
+        let (c, h, w) = self.input_shape;
+        output_gradient.into_shape((b, c, h, w)).unwrap().into_dyn()
     }
 
     fn get_weights(&self) -> Option<ArrayD<F>> {

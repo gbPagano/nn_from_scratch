@@ -27,14 +27,14 @@ pub fn simple_layers_a() -> (
 ) {
     let mut layer_a = Dense::new(2, 2);
     layer_a.weights = array![[0.15, 0.2], [0.25, 0.3]];
-    layer_a.bias = array![[0.35], [0.35]];
+    layer_a.bias = array![0.35, 0.35];
 
     let mut layer_b = Dense::new(2, 2);
     layer_b.weights = array![[0.4, 0.45], [0.5, 0.55]];
-    layer_b.bias = array![[0.6], [0.6]];
+    layer_b.bias = array![0.6, 0.6];
 
-    let inputs = array![[0.05], [0.1]].into_dyn();
-    let desired = array![[0.01], [0.99]].into_dyn();
+    let inputs = array![[0.05, 0.1]].into_dyn();
+    let desired = array![[0.01, 0.99]].into_dyn();
 
     let activate_a = Sigmoid::new();
     let activate_b = Sigmoid::new();
@@ -45,18 +45,18 @@ pub fn simple_layers_a() -> (
 pub fn simple_nn() -> (NeuralNetwork<'static, f64>, ArrayD<f64>, ArrayD<f64>) {
     let mut layer_1 = Dense::new(2, 2);
     layer_1.weights = array![[0.15, 0.2], [0.25, 0.3]];
-    layer_1.bias = array![[0.35], [0.35]];
+    layer_1.bias = array![0.35, 0.35];
 
     let layer_2 = Sigmoid::new();
 
     let mut layer_3 = Dense::new(2, 2);
     layer_3.weights = array![[0.4, 0.45], [0.5, 0.55]];
-    layer_3.bias = array![[0.6], [0.6]];
+    layer_3.bias = array![0.6, 0.6];
 
     let layer_4 = Sigmoid::new();
 
-    let inputs = array![[0.05], [0.1]].into_dyn();
-    let desired = array![[0.01], [0.99]].into_dyn();
+    let inputs = array![0.05, 0.1].into_dyn();
+    let desired = array![0.01, 0.99].into_dyn();
     let nn = NeuralNetwork {
         layers: vec![
             Box::new(layer_1),
@@ -92,16 +92,10 @@ pub fn mnist_f32() -> (Vec<ArrayD<f32>>, Vec<ArrayD<f32>>) {
     .unwrap();
 
     let x_train = x_train
-        .insert_axis(ndarray::Axis(2))
-        .into_dimensionality::<Ix3>()
-        .unwrap()
         .axis_iter(Axis(0))
         .map(|item| item.into_owned().into_dyn())
         .collect();
     let y_train = y_train
-        .insert_axis(ndarray::Axis(2))
-        .into_dimensionality::<Ix3>()
-        .unwrap()
         .axis_iter(Axis(0))
         .map(|item| item.into_owned().into_dyn())
         .collect();

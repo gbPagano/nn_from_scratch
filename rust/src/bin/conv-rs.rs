@@ -2,8 +2,6 @@ fn main() {
     use ndarray::prelude::*;
     use ndarray::*;
     use ndarray_conv::*;
-    use ndarray_rand::rand_distr::Uniform;
-    use ndarray_rand::RandomExt;
 
     //let x = Array::random((2000, 4000), Uniform::new(0., 1.));
     //let k = Array::random((9, 9), Uniform::new(0., 1.));
@@ -41,7 +39,6 @@ fn main() {
     println!("{:?}", res);
     out.push(res);
 
-    let a: Vec<_> = out.iter().map(|i| i.view()).collect::<Vec<_>>();
     let out = concatenate(Axis(0), &out.iter().map(|i| i.view()).collect::<Vec<_>>());
     println!("{:?}", out);
 }

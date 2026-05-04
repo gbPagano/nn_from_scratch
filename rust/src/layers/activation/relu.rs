@@ -43,12 +43,7 @@ impl<F: Float> Layer<F> for ReLU<F> {
         self.activate(&self.input)
     }
 
-    fn backward(
-        &mut self,
-        output_gradient: ArrayD<F>,
-        _learning_rate: F,
-        _batch_size: usize,
-    ) -> ArrayD<F> {
+    fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
         output_gradient * self.derivative(&self.input)
     }
 }

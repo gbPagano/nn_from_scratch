@@ -63,8 +63,8 @@ mod tests {
 
     #[test]
     fn test_half_mse_loss() {
-        let y_real = array![[0.01], [0.99]].into_dyn();
-        let y_pred = array![[0.75136507], [0.77292847]].into_dyn();
+        let y_real = array![[0.01, 0.99]].into_dyn();
+        let y_pred = array![[0.75136507, 0.77292847]].into_dyn();
 
         let loss = MSE::new().loss(&y_real, &y_pred);
         assert_relative_eq!(loss, 0.298371109, max_relative = 0.00001);

@@ -1,6 +1,6 @@
 extern crate blas_src;
 
-use ndarray::{arr2, Array2, ArrayD, Ix2};
+use ndarray::{Array1, Array2, ArrayD, Axis, Ix1, Ix2};
 use ndarray_rand::rand::Rng;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
@@ -11,11 +11,8 @@ use super::Layer;
 
 pub struct Dense<F: Float> {
     pub weights: Array2<F>,
-    pub bias: Array2<F>,
+    pub bias: Array1<F>,
     input: Array2<F>,
-    curr_batch: usize,
-    weights_gradient: Array2<F>,
-    bias_gradient: Array2<F>,
     weights_optimizer: Box<dyn Optimizer<F>>,
     bias_optimizer: Box<dyn Optimizer<F>>,
 }
@@ -39,14 +36,11 @@ impl<F: Float> Dense<F> {
 
     fn with_weights(weights: Array2<F>) -> Self {
         let outputs = weights.shape()[0];
-        let bias = Array2::zeros((outputs, 1));
+        let bias = Array1::zeros(outputs);
         Dense {
             weights,
             bias,
-            input: arr2(&[[]]),
-            curr_batch: 0,
-            weights_gradient: arr2(&[[]]),
-            bias_gradient: arr2(&[[]]),
+            input: Array2::zeros((0, 0)),
             weights_optimizer: Box::new(SGD),
             bias_optimizer: Box::new(SGD),
         }
@@ -56,47 +50,27 @@ impl<F: Float> Dense<F> {
 impl<F: Float> Layer<F> for Dense<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
         self.input = input.into_dimensionality::<Ix2>().unwrap();
-        let output = self.weights.dot(&self.input) + &self.bias;
+        let output = self.input.dot(&self.weights.t()) + &self.bias;
         output.into_dyn()
     }
 
-    fn backward(
-        &mut self,
-        output_gradient: ArrayD<F>,
-        learning_rate: F,
-        batch_size: usize,
-    ) -> ArrayD<F> {
+    fn backward(&mut self, output_gradient: ArrayD<F>, learning_rate: F) -> ArrayD<F> {
         let output_gradient = output_gradient.into_dimensionality::<Ix2>().unwrap();
-        let weights_gradient = output_gradient.dot(&self.input.t());
-        let input_gradient = self.weights.t().dot(&output_gradient);
+        let b = F::from_usize(output_gradient.shape()[0]).unwrap();
+        let weights_gradient = output_gradient.t().dot(&self.input) / b;
+        let bias_gradient = output_gradient.sum_axis(Axis(0)) / b;
+        let input_gradient = output_gradient.dot(&self.weights);
 
-        if self.curr_batch == 0 {
-            self.weights_gradient = weights_gradient;
-            self.bias_gradient = output_gradient;
-        } else {
-            self.weights_gradient += &weights_gradient;
-            self.bias_gradient += &output_gradient;
-        }
-
-        self.curr_batch += 1;
-        if self.curr_batch == batch_size {
-            let inv_batch = F::from_f32(1.0).unwrap() / F::from_usize(batch_size).unwrap();
-            self.weights_gradient *= inv_batch;
-            self.bias_gradient *= inv_batch;
-
-            self.weights_optimizer.step(
-                self.weights.view_mut().into_dyn(),
-                self.weights_gradient.view().into_dyn(),
-                learning_rate,
-            );
-            self.bias_optimizer.step(
-                self.bias.view_mut().into_dyn(),
-                self.bias_gradient.view().into_dyn(),
-                learning_rate,
-            );
-
-            self.curr_batch = 0;
-        }
+        self.weights_optimizer.step(
+            self.weights.view_mut().into_dyn(),
+            weights_gradient.view().into_dyn(),
+            learning_rate,
+        );
+        self.bias_optimizer.step(
+            self.bias.view_mut().into_dyn(),
+            bias_gradient.view().into_dyn(),
+            learning_rate,
+        );
 
         input_gradient.into_dyn()
     }
@@ -114,7 +88,7 @@ impl<F: Float> Layer<F> for Dense<F> {
     }
 
     fn set_bias(&mut self, bias: ArrayD<F>) {
-        self.bias = bias.into_dimensionality::<Ix2>().unwrap();
+        self.bias = bias.into_dimensionality::<Ix1>().unwrap();
     }
 
     fn set_optimizer(&mut self, config: &OptimizerConfig<F>) {

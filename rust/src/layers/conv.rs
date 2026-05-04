@@ -13,11 +13,7 @@ use super::Layer;
 pub struct Conv<F: Float> {
     pub weights: Array4<F>,
     pub bias: Array3<F>,
-    input: Array3<F>,
-    curr_batch: usize,
-    input_shape: (usize, usize, usize),
-    weights_gradient: Array4<F>,
-    bias_gradient: Array3<F>,
+    input: Array4<F>,
     weights_optimizer: Box<dyn Optimizer<F>>,
     bias_optimizer: Box<dyn Optimizer<F>>,
 }
@@ -58,7 +54,7 @@ impl<F: Float> Conv<F> {
     }
 
     fn with_weights(input_shape: (usize, usize, usize), weights: Array4<F>) -> Self {
-        let (input_depth, input_height, input_width) = input_shape;
+        let (_input_depth, input_height, input_width) = input_shape;
         let kernels = weights.shape()[0];
         let kernel_size = weights.shape()[2];
         let bias = Array3::zeros((
@@ -70,11 +66,7 @@ impl<F: Float> Conv<F> {
         Self {
             weights,
             bias,
-            input: arr3(&[[[]]]),
-            curr_batch: 0,
-            input_shape,
-            bias_gradient: arr3(&[[[]]]),
-            weights_gradient: Array4::zeros((kernels, input_depth, kernel_size, kernel_size)),
+            input: Array4::zeros((0, 0, 0, 0)),
             weights_optimizer: Box::new(SGD),
             bias_optimizer: Box::new(SGD),
         }
@@ -83,95 +75,84 @@ impl<F: Float> Conv<F> {
 
 impl<F: Float> Layer<F> for Conv<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.input = if input.ndim() == 3 {
-            input.into_dimensionality::<Ix3>().unwrap()
-        } else {
-            input
-                .into_dimensionality::<Ix2>()
-                .unwrap()
-                .insert_axis(Axis(0))
-        };
+        self.input = input.into_dimensionality::<Ix4>().unwrap();
+        let b = self.input.shape()[0];
+        let (k, _c, kh, kw) = self.weights.dim();
+        let h_out = self.input.shape()[2] - kh + 1;
+        let w_out = self.input.shape()[3] - kw + 1;
 
-        let mut output = Vec::new();
-        for w in self.weights.outer_iter() {
-            output.push(
-                self.input
-                    .conv_fft(&w, ConvMode::Valid, PaddingMode::Zeros)
-                    .unwrap(),
-            );
+        let mut output: Array4<F> = Array4::zeros((b, k, h_out, w_out));
+        for bi in 0..b {
+            for ki in 0..k {
+                let conv = self
+                    .input
+                    .slice(s![bi, .., .., ..])
+                    .conv_fft(
+                        &self.weights.slice(s![ki, .., .., ..]),
+                        ConvMode::Valid,
+                        PaddingMode::Zeros,
+                    )
+                    .unwrap();
+                output
+                    .slice_mut(s![bi, ki, .., ..])
+                    .assign(&conv.index_axis(Axis(0), 0));
+            }
         }
-        let mut output = concatenate(
-            Axis(0),
-            &output.iter().map(|i| i.view()).collect::<Vec<_>>(),
-        )
-        .unwrap();
         output += &self.bias;
         output.into_dyn()
     }
 
-    fn backward(
-        &mut self,
-        output_gradient: ArrayD<F>,
-        learning_rate: F,
-        batch_size: usize,
-    ) -> ArrayD<F> {
-        let output_gradient = output_gradient.into_dimensionality::<Ix3>().unwrap();
+    fn backward(&mut self, output_gradient: ArrayD<F>, learning_rate: F) -> ArrayD<F> {
+        let output_gradient = output_gradient.into_dimensionality::<Ix4>().unwrap();
+        let b = output_gradient.shape()[0];
+        let b_f = F::from_usize(b).unwrap();
         let mut weights_gradient: Array4<F> = Array4::zeros(self.weights.dim());
-        let mut input_gradient: Array3<F> = Array3::zeros(self.input_shape);
+        let mut input_gradient: Array4<F> = Array4::zeros(self.input.dim());
 
-        for i in 0..self.weights.dim().0 {
-            for j in 0..self.weights.dim().1 {
-                weights_gradient.slice_mut(s![i, j, .., ..]).assign(
-                    &self
+        for bi in 0..b {
+            for ki in 0..self.weights.dim().0 {
+                for ci in 0..self.weights.dim().1 {
+                    let wg = self
                         .input
-                        .index_axis(Axis(0), j)
+                        .slice(s![bi, ci, .., ..])
                         .conv_fft(
-                            &output_gradient.index_axis(Axis(0), i),
+                            &output_gradient.slice(s![bi, ki, .., ..]),
                             ConvMode::Valid,
                             PaddingMode::Zeros,
                         )
-                        .unwrap(),
-                );
-                input_gradient.slice_mut(s![j, .., ..]).zip_mut_with(
-                    &output_gradient
-                        .index_axis(Axis(0), i)
+                        .unwrap();
+                    weights_gradient
+                        .slice_mut(s![ki, ci, .., ..])
+                        .zip_mut_with(&wg, |x, &y| *x += y);
+
+                    let ig = output_gradient
+                        .slice(s![bi, ki, .., ..])
                         .conv_fft(
-                            &self.weights.slice(s![i, j, ..;-1, ..;-1]),
+                            &self.weights.slice(s![ki, ci, ..;-1, ..;-1]),
                             ConvMode::Full,
                             PaddingMode::Zeros,
                         )
-                        .unwrap(),
-                    |x, &y| *x += y,
-                );
+                        .unwrap();
+                    input_gradient
+                        .slice_mut(s![bi, ci, .., ..])
+                        .zip_mut_with(&ig, |x, &y| *x += y);
+                }
             }
         }
 
-        if self.curr_batch == 0 {
-            self.weights_gradient = weights_gradient;
-            self.bias_gradient = output_gradient;
-        } else {
-            self.weights_gradient += &weights_gradient;
-            self.bias_gradient += &output_gradient;
-        }
-        self.curr_batch += 1;
-        if self.curr_batch == batch_size {
-            let inv_batch = F::from_f32(1.0).unwrap() / F::from_usize(batch_size).unwrap();
-            self.weights_gradient *= inv_batch;
-            self.bias_gradient *= inv_batch;
+        weights_gradient.mapv_inplace(|v| v / b_f);
+        let bias_gradient = output_gradient.sum_axis(Axis(0)) / b_f;
 
-            self.weights_optimizer.step(
-                self.weights.view_mut().into_dyn(),
-                self.weights_gradient.view().into_dyn(),
-                learning_rate,
-            );
-            self.bias_optimizer.step(
-                self.bias.view_mut().into_dyn(),
-                self.bias_gradient.view().into_dyn(),
-                learning_rate,
-            );
-
-            self.curr_batch = 0;
-        }
+        self.weights_optimizer.step(
+            self.weights.view_mut().into_dyn(),
+            weights_gradient.view().into_dyn(),
+            learning_rate,
+        );
+        self.bias_optimizer.step(
+            self.bias.view_mut().into_dyn(),
+            bias_gradient.view().into_dyn(),
+            learning_rate,
+        );
 
         input_gradient.into_dyn()
     }
@@ -218,6 +199,8 @@ mod tests {
             [1., 0., 1., 2., 3., 0.],
             [1., 1., 2., 3., 1., 0.],
         ])
+        .insert_axis(Axis(0))
+        .insert_axis(Axis(0))
         .into_dyn();
         let kernel = arr3(&[[[1., 0., 1.], [0., 1., 0.], [1., 0., 1.]]]).insert_axis(Axis(0));
 
@@ -230,7 +213,9 @@ mod tests {
         let out = conv_layer.forward(input);
         assert_eq!(
             out,
-            arr3(&[[[5., 6., 8., 9.], [4., 6., 7., 7.]]]).into_dyn()
+            arr3(&[[[5., 6., 8., 9.], [4., 6., 7., 7.]]])
+                .insert_axis(Axis(0))
+                .into_dyn()
         );
     }
 
@@ -250,6 +235,7 @@ mod tests {
                 [2., 2., 4., 6., 2., 0.],
             ],
         ])
+        .insert_axis(Axis(0))
         .into_dyn();
         let kernel = arr3(&[
             [[1., 0., 1.], [0., 1., 0.], [1., 0., 1.]],
@@ -266,7 +252,9 @@ mod tests {
         let out = conv_layer.forward(input);
         assert_eq!(
             out,
-            arr3(&[[[10., 12., 16., 17.], [8., 12., 14., 13.]]]).into_dyn()
+            arr3(&[[[10., 12., 16., 17.], [8., 12., 14., 13.]]])
+                .insert_axis(Axis(0))
+                .into_dyn()
         );
     }
 
@@ -286,6 +274,7 @@ mod tests {
                 [2., 2., 4., 6., 2., 0.],
             ],
         ])
+        .insert_axis(Axis(0))
         .into_dyn();
 
         let kernel_a = arr3(&[
@@ -314,6 +303,7 @@ mod tests {
                 [[10., 12., 16., 17.], [8., 12., 14., 13.]],
                 [[6., 10., 40., 35.], [21., 20., 35., 25.]]
             ])
+            .insert_axis(Axis(0))
             .into_dyn(),
             epsilon = 1e-2
         );
@@ -335,6 +325,7 @@ mod tests {
                 [2., 2., 4., 6., 2., 0.],
             ],
         ])
+        .insert_axis(Axis(0))
         .into_dyn();
 
         let kernel_a = arr3(&[
@@ -357,15 +348,22 @@ mod tests {
         ]);
 
         let conv_out = conv_layer.forward(input);
-        let pred = SoftmaxCE::default().forward(conv_out);
+        let conv_out_shape = conv_out.raw_dim();
+        let flat_len = conv_out.len();
+        // This test historically treats the whole conv map as one softmax vector.
+        let pred = SoftmaxCE::default()
+            .forward(conv_out.into_shape((1, flat_len)).unwrap().into_dyn())
+            .into_shape(conv_out_shape)
+            .unwrap();
         let real = arr3(&[
             [[1., 0., 0., 1.], [0., 1., 1., 0.]],
             [[0., 1., 1., 0.], [1., 0., 0., 1.]],
-        ]);
+        ])
+        .insert_axis(Axis(0));
 
         let error = real.into_dyn() - pred;
-        conv_layer.backward(error.clone(), 0.005, 1);
-        let input_grad = conv_layer.backward(error, 0.005, 1);
+        conv_layer.backward(error.clone(), 0.005);
+        let input_grad = conv_layer.backward(error, 0.005);
         assert_abs_diff_eq!(
             conv_layer.get_weights().unwrap().index_axis(Axis(0), 0),
             arr3(&[
@@ -416,6 +414,7 @@ mod tests {
                     [-0.030, 2.419, 0.290, 0.339, 2.429, -0.069]
                 ]
             ])
+            .insert_axis(Axis(0))
             .into_dyn(),
             epsilon = 1e-2
         );

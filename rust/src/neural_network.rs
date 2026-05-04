@@ -1,7 +1,7 @@
 extern crate blas_src;
 
 use kdam::{term, term::Colorizer, tqdm, BarExt, Column, RichProgress};
-use ndarray::ArrayD;
+use ndarray::{ArrayD, ArrayView1, Axis, Ix2};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
@@ -40,9 +40,9 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         out
     }
 
-    fn backward(&mut self, mut grad: ArrayD<F>, learning_rate: F, batch_size: usize) {
+    fn backward(&mut self, mut grad: ArrayD<F>, learning_rate: F) {
         for layer in self.layers.iter_mut().rev() {
-            grad = layer.backward(grad, learning_rate, batch_size);
+            grad = layer.backward(grad, learning_rate);
         }
     }
 
@@ -116,21 +116,29 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
 
         for epoch in 1..=config.epochs {
             permutation.shuffle(&mut *rng);
-            for &idx in permutation.iter() {
-                let x = unsafe { x_train.get_unchecked(idx) };
-                let y = unsafe { y_train.get_unchecked(idx) };
+            for batch_idx in permutation.chunks(config.batch_size) {
+                let x_batch = stack_views(x_train, batch_idx);
+                let y_batch = stack_views(y_train, batch_idx);
 
-                let out = self.forward(x.clone());
-                let grad = config.loss_function.gradient(y, &out);
-                self.backward(grad, config.learning_rate, config.batch_size);
+                let out = self.forward(x_batch);
+                let grad = config.loss_function.gradient(&y_batch, &out);
+                self.backward(grad, config.learning_rate);
             }
             if self.terminal_output && epoch % config.evaluate_step == 0 {
-                let (train_accuracy, train_loss) =
-                    self.evaluate(x_train, y_train, config.loss_function.as_ref());
+                let (train_accuracy, train_loss) = self.evaluate(
+                    x_train,
+                    y_train,
+                    config.loss_function.as_ref(),
+                    config.batch_size,
+                );
                 let val_str = match validation {
                     Some((x_val, y_val)) => {
-                        let (val_accuracy, val_loss) =
-                            self.evaluate(x_val, y_val, config.loss_function.as_ref());
+                        let (val_accuracy, val_loss) = self.evaluate(
+                            x_val,
+                            y_val,
+                            config.loss_function.as_ref(),
+                            config.batch_size,
+                        );
                         format!(
                             " | Val Loss: {} | Val Accuracy: {}",
                             format!("{:.8}", val_loss).to_string().colorize("bold blue"),
@@ -170,29 +178,30 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         x_vec: &[ArrayD<F>],
         y_vec: &[ArrayD<F>],
         loss_fn: &dyn Loss<F>,
+        batch_size: usize,
     ) -> (f64, F) {
         let total = y_vec.len();
         let mut correct = 0;
-        let mut loss = F::from_f32(0.0).unwrap();
-        for (x, y) in x_vec.iter().zip(y_vec.iter()) {
-            let out = self.forward(x.to_owned().into_dyn());
-            loss += loss_fn.loss(y, &out);
-            let (pred, _) = out
-                .iter()
-                .enumerate()
-                .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).unwrap())
-                .unwrap();
-            let (real, _) = y
-                .iter()
-                .enumerate()
-                .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).unwrap())
-                .unwrap();
-            if pred == real {
-                correct += 1;
+        let mut loss_acc = F::from_f32(0.0).unwrap();
+        let indices: Vec<usize> = (0..total).collect();
+        for batch_idx in indices.chunks(batch_size) {
+            let x_batch = stack_views(x_vec, batch_idx);
+            let y_batch = stack_views(y_vec, batch_idx);
+            let out = self.forward(x_batch);
+
+            let batch_loss = loss_fn.loss(&y_batch, &out);
+            loss_acc += batch_loss * F::from_usize(batch_idx.len()).unwrap();
+
+            let out2 = out.view().into_dimensionality::<Ix2>().unwrap();
+            let y2 = y_batch.view().into_dimensionality::<Ix2>().unwrap();
+            for (out_row, y_row) in out2.outer_iter().zip(y2.outer_iter()) {
+                if argmax(&out_row) == argmax(&y_row) {
+                    correct += 1;
+                }
             }
         }
         let accuracy = correct as f64 / total as f64;
-        let avg_loss = loss / F::from_usize(total).unwrap();
+        let avg_loss = loss_acc / F::from_usize(total).unwrap();
         (accuracy, avg_loss)
     }
 
@@ -213,6 +222,19 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             ],
         )
     }
+}
+
+fn stack_views<F: Float>(samples: &[ArrayD<F>], indices: &[usize]) -> ArrayD<F> {
+    let views: Vec<_> = indices.iter().map(|&i| samples[i].view()).collect();
+    ndarray::stack(Axis(0), &views).unwrap()
+}
+
+fn argmax<F: Float>(row: &ArrayView1<F>) -> usize {
+    row.iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .map(|(i, _)| i)
+        .unwrap()
 }
 
 pub struct NNConfig<F: Float> {
@@ -277,18 +299,18 @@ mod tests {
     fn simple_nn() -> (NeuralNetwork<'static, f64>, ArrayD<f64>, ArrayD<f64>) {
         let mut layer_1 = Dense::new(2, 2);
         layer_1.weights = array![[0.15, 0.2], [0.25, 0.3]];
-        layer_1.bias = array![[0.35], [0.35]];
+        layer_1.bias = array![0.35, 0.35];
 
         let layer_2 = Sigmoid::new();
 
         let mut layer_3 = Dense::new(2, 2);
         layer_3.weights = array![[0.4, 0.45], [0.5, 0.55]];
-        layer_3.bias = array![[0.6], [0.6]];
+        layer_3.bias = array![0.6, 0.6];
 
         let layer_4 = Sigmoid::new();
 
-        let inputs = array![[0.05], [0.1]].into_dyn();
-        let desired = array![[0.01], [0.99]].into_dyn();
+        let inputs = array![[0.05, 0.1]].into_dyn();
+        let desired = array![[0.01, 0.99]].into_dyn();
         let nn = NeuralNetwork {
             layers: vec![
                 Box::new(layer_1),
@@ -310,7 +332,7 @@ mod tests {
 
         assert_abs_diff_eq!(
             out,
-            array![[0.75136507], [0.77292847]].into_dyn(),
+            array![[0.75136507, 0.77292847]].into_dyn(),
             epsilon = 1e-8
         );
     }
@@ -355,9 +377,9 @@ mod tests {
         let path = path.to_str().unwrap();
 
         source.layers[0].set_weights(array![[0.1, 0.2], [0.3, 0.4]].into_dyn());
-        source.layers[0].set_bias(array![[0.5], [0.6]].into_dyn());
+        source.layers[0].set_bias(array![0.5, 0.6].into_dyn());
         source.layers[2].set_weights(array![[0.7, 0.8]].into_dyn());
-        source.layers[2].set_bias(array![[0.9]].into_dyn());
+        source.layers[2].set_bias(array![0.9].into_dyn());
 
         source.save(path);
         target.load(path);
@@ -391,8 +413,8 @@ mod tests {
     fn test_nn_backward(simple_nn: (NeuralNetwork<f64>, ArrayD<f64>, ArrayD<f64>)) {
         let (mut nn, inputs, desired) = simple_nn;
 
-        let x_train = vec![inputs];
-        let y_train = vec![desired];
+        let x_train = vec![inputs.index_axis(Axis(0), 0).to_owned().into_dyn()];
+        let y_train = vec![desired.index_axis(Axis(0), 0).to_owned().into_dyn()];
 
         nn.fit(&x_train, &y_train, NNConfig::default());
 
@@ -412,8 +434,8 @@ mod tests {
     fn test_nn_backward_minibatch(simple_nn: (NeuralNetwork<f64>, ArrayD<f64>, ArrayD<f64>)) {
         let (mut nn, _, _) = simple_nn;
 
-        let x_train = array![[[0.05], [0.1]], [[0.05], [0.1]]];
-        let y_train = array![[[0.01], [0.99]], [[0.01], [0.99]]];
+        let x_train = array![[0.05, 0.1], [0.05, 0.1]];
+        let y_train = array![[0.01, 0.99], [0.01, 0.99]];
         let x_train: Vec<ArrayD<_>> = x_train
             .axis_iter(Axis(0))
             .map(|item| item.into_owned().into_dyn())
