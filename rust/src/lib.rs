@@ -1,11 +1,11 @@
 use ndarray::ScalarOperand;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
-use num_traits::{float, NumAssign, FromPrimitive};
+use num_traits::{float, FromPrimitive, NumAssign};
+use rustfft::FftNum;
 use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::marker::{Send, Sync};
 use std::ops::{AddAssign, DivAssign, SubAssign};
-use rustfft::FftNum;
 
 pub mod layers;
 pub mod loss;

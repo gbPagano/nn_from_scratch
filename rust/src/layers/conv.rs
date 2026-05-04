@@ -2,7 +2,7 @@ extern crate blas_src;
 
 use ndarray::*;
 use ndarray_conv::*;
-use ndarray_rand::rand_distr::Uniform;
+use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
 
 use super::super::Float;
@@ -22,19 +22,20 @@ impl<F: Float> Conv<F> {
     pub fn new(input_shape: (usize, usize, usize), kernels: usize, kernel_size: usize) -> Self {
         let (input_depth, input_height, input_width) = input_shape;
 
+        // He/Kaiming initialization: std = sqrt(2 / fan_in), suited to ReLU/ELU.
+        let fan_in = (input_depth * kernel_size * kernel_size) as f32;
+        let std = (2.0 / fan_in).sqrt();
         let weights = Array4::random(
             (kernels, input_depth, kernel_size, kernel_size),
-            Uniform::new(F::from_f32(-0.5).unwrap(), F::from_f32(0.5).unwrap()),
-        );
+            Normal::new(0.0, std).unwrap(),
+        )
+        .mapv(|v: f32| F::from_f32(v).unwrap());
 
-        let bias = Array3::random(
-            (
-                kernels,
-                input_height - kernel_size + 1,
-                input_width - kernel_size + 1,
-            ),
-            Uniform::new(F::from_f32(-0.5).unwrap(), F::from_f32(0.5).unwrap()),
-        );
+        let bias = Array3::zeros((
+            kernels,
+            input_height - kernel_size + 1,
+            input_width - kernel_size + 1,
+        ));
 
         Self {
             weights,

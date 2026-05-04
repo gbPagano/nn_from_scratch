@@ -1,7 +1,7 @@
 extern crate blas_src;
 
 use ndarray::{arr2, Array2, ArrayD, Ix2, Zip};
-use ndarray_rand::rand_distr::Uniform;
+use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
 
 use super::super::Float;
@@ -18,14 +18,11 @@ pub struct Dense<F: Float> {
 
 impl<F: Float> Dense<F> {
     pub fn new(inputs: usize, outputs: usize) -> Self {
-        let weights = Array2::random(
-            (outputs, inputs),
-            Uniform::new(F::from_f32(-0.5).unwrap(), F::from_f32(0.5).unwrap()),
-        );
-        let bias = Array2::random(
-            (outputs, 1),
-            Uniform::new(F::from_f32(-0.5).unwrap(), F::from_f32(0.5).unwrap()),
-        );
+        // He/Kaiming initialization: std = sqrt(2 / fan_in), suited to ReLU/ELU.
+        let std = (2.0 / inputs as f32).sqrt();
+        let weights = Array2::random((outputs, inputs), Normal::new(0.0, std).unwrap())
+            .mapv(|v: f32| F::from_f32(v).unwrap());
+        let bias = Array2::zeros((outputs, 1));
         Dense {
             weights,
             bias,

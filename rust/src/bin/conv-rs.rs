@@ -31,7 +31,6 @@ fn main() {
         [[0., 2., 0.], [2., 0., 2.], [0., 2., 0.]],
     ]);
 
-
     let mut out = Vec::new();
 
     let res = x.conv(&k, ConvMode::Valid, PaddingMode::Zeros).unwrap();
