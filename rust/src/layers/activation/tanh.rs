@@ -1,10 +1,10 @@
-use ndarray::{array, ArrayD};
+use ndarray::{ArrayD, IxDyn};
 
 use super::Float;
 use super::Layer;
 
 pub struct TanH<F: Float> {
-    input: ArrayD<F>,
+    output: ArrayD<F>,
 }
 
 impl<F: Float> Default for TanH<F> {
@@ -16,26 +16,24 @@ impl<F: Float> Default for TanH<F> {
 impl<F: Float> TanH<F> {
     pub fn new() -> TanH<F> {
         TanH {
-            input: array![[]].into_dyn(),
+            output: ArrayD::zeros(IxDyn(&[0])),
         }
     }
     pub fn activate(&self, input: &ArrayD<F>) -> ArrayD<F> {
         input.mapv(|x| x.tanh())
     }
-    pub fn derivative(&self, input: &ArrayD<F>) -> ArrayD<F> {
-        let activation = self.activate(input);
-        -activation.mapv(|x| F::powf(x, F::from_f32(2.0).unwrap())) + F::from_f32(1.0).unwrap()
-    }
 }
 
 impl<F: Float> Layer<F> for TanH<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.input = input;
-        self.activate(&self.input)
+        self.output = input.mapv(|x| x.tanh());
+        self.output.clone()
     }
 
     fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
-        output_gradient * self.derivative(&self.input)
+        let one = F::from_f32(1.0).unwrap();
+        let derivative = self.output.mapv(|y| one - y * y);
+        output_gradient * derivative
     }
 }
 

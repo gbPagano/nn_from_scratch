@@ -1,35 +1,29 @@
-use ndarray::{array, ArrayD};
+use ndarray::{ArrayD, IxDyn};
 
 use super::Float;
 use super::Layer;
 
 pub struct ELU<F: Float> {
-    input: ArrayD<F>,
+    output: ArrayD<F>,
     alpha: F,
 }
 
 impl<F: Float> ELU<F> {
     pub fn new(alpha: F) -> ELU<F> {
         ELU {
-            input: array![[]].into_dyn(),
+            output: ArrayD::zeros(IxDyn(&[0])),
             alpha,
         }
     }
     pub fn activate(&self, array: &ArrayD<F>) -> ArrayD<F> {
+        let zero = F::from_f32(0.0).unwrap();
+        let one = F::from_f32(1.0).unwrap();
+        let alpha = self.alpha;
         array.mapv(|x| {
-            if x >= F::from_f32(0.0).unwrap() {
+            if x >= zero {
                 x
             } else {
-                self.alpha * (x.exp() - F::from_f32(1.0).unwrap())
-            }
-        })
-    }
-    pub fn derivative(&self, array: &ArrayD<F>) -> ArrayD<F> {
-        array.mapv(|x| {
-            if x >= F::from_f32(0.0).unwrap() {
-                F::from_f32(1.0).unwrap()
-            } else {
-                self.alpha * (x.exp() - F::from_f32(1.0).unwrap()) + self.alpha
+                alpha * (x.exp() - one)
             }
         })
     }
@@ -42,12 +36,27 @@ impl<F: Float> Default for ELU<F> {
 
 impl<F: Float> Layer<F> for ELU<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.input = input;
-        self.activate(&self.input)
+        let zero = F::from_f32(0.0).unwrap();
+        let one = F::from_f32(1.0).unwrap();
+        let alpha = self.alpha;
+        self.output = input.mapv(|x| {
+            if x >= zero {
+                x
+            } else {
+                alpha * (x.exp() - one)
+            }
+        });
+        self.output.clone()
     }
 
     fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
-        output_gradient * self.derivative(&self.input)
+        let zero = F::from_f32(0.0).unwrap();
+        let one = F::from_f32(1.0).unwrap();
+        let alpha = self.alpha;
+        let derivative = self
+            .output
+            .mapv(|y| if y >= zero { one } else { y + alpha });
+        output_gradient * derivative
     }
 }
 

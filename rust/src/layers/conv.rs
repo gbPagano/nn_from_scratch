@@ -5,6 +5,7 @@ use ndarray_conv::*;
 use ndarray_rand::rand::Rng;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
+use rayon::prelude::*;
 
 use super::super::optimizer::{Optimizer, OptimizerConfig, SGD};
 use super::super::Float;
@@ -82,23 +83,27 @@ impl<F: Float> Layer<F> for Conv<F> {
         let w_out = self.input.shape()[3] - kw + 1;
 
         let mut output: Array4<F> = Array4::zeros((b, k, h_out, w_out));
-        for bi in 0..b {
-            for ki in 0..k {
-                let conv = self
-                    .input
-                    .slice(s![bi, .., .., ..])
-                    .conv_fft(
-                        &self.weights.slice(s![ki, .., .., ..]),
-                        ConvMode::Valid,
-                        PaddingMode::Zeros,
-                    )
-                    .unwrap();
-                output
-                    .slice_mut(s![bi, ki, .., ..])
-                    .assign(&conv.index_axis(Axis(0), 0));
-            }
-        }
-        output += &self.bias;
+        let bias = &self.bias;
+        let weights = &self.weights;
+
+        Zip::indexed(self.input.axis_iter(Axis(0)))
+            .and(output.axis_iter_mut(Axis(0)))
+            .par_for_each(|_bi, input_sample, mut output_sample| {
+                for ki in 0..k {
+                    let conv = input_sample
+                        .conv_fft(
+                            &weights.slice(s![ki, .., .., ..]),
+                            ConvMode::Valid,
+                            PaddingMode::Zeros,
+                        )
+                        .unwrap();
+                    output_sample
+                        .slice_mut(s![ki, .., ..])
+                        .assign(&conv.index_axis(Axis(0), 0));
+                }
+                output_sample += bias;
+            });
+
         output.into_dyn()
     }
 
@@ -106,41 +111,66 @@ impl<F: Float> Layer<F> for Conv<F> {
         let output_gradient = output_gradient.into_dimensionality::<Ix4>().unwrap();
         let b = output_gradient.shape()[0];
         let b_f = F::from_usize(b).unwrap();
-        let mut weights_gradient: Array4<F> = Array4::zeros(self.weights.dim());
+        let (k, c, kh, kw) = self.weights.dim();
+
+        let input = &self.input;
+        let weights = &self.weights;
+
+        let weights_gradient: Array4<F> = (0..b)
+            .into_par_iter()
+            .zip(input.axis_iter(Axis(0)).into_par_iter())
+            .zip(output_gradient.axis_iter(Axis(0)).into_par_iter())
+            .fold(
+                || Array4::<F>::zeros((k, c, kh, kw)),
+                |mut wg_local, ((_bi, input_sample), output_grad_sample)| {
+                    for ki in 0..k {
+                        for ci in 0..c {
+                            let wg = input_sample
+                                .slice(s![ci, .., ..])
+                                .conv_fft(
+                                    &output_grad_sample.slice(s![ki, .., ..]),
+                                    ConvMode::Valid,
+                                    PaddingMode::Zeros,
+                                )
+                                .unwrap();
+                            wg_local
+                                .slice_mut(s![ki, ci, .., ..])
+                                .zip_mut_with(&wg, |x, &y| *x += y);
+                        }
+                    }
+                    wg_local
+                },
+            )
+            .reduce(
+                || Array4::<F>::zeros((k, c, kh, kw)),
+                |mut acc, partial| {
+                    acc += &partial;
+                    acc
+                },
+            );
+
         let mut input_gradient: Array4<F> = Array4::zeros(self.input.dim());
-
-        for bi in 0..b {
-            for ki in 0..self.weights.dim().0 {
-                for ci in 0..self.weights.dim().1 {
-                    let wg = self
-                        .input
-                        .slice(s![bi, ci, .., ..])
-                        .conv_fft(
-                            &output_gradient.slice(s![bi, ki, .., ..]),
-                            ConvMode::Valid,
-                            PaddingMode::Zeros,
-                        )
-                        .unwrap();
-                    weights_gradient
-                        .slice_mut(s![ki, ci, .., ..])
-                        .zip_mut_with(&wg, |x, &y| *x += y);
-
-                    let ig = output_gradient
-                        .slice(s![bi, ki, .., ..])
-                        .conv_fft(
-                            &self.weights.slice(s![ki, ci, ..;-1, ..;-1]),
-                            ConvMode::Full,
-                            PaddingMode::Zeros,
-                        )
-                        .unwrap();
-                    input_gradient
-                        .slice_mut(s![bi, ci, .., ..])
-                        .zip_mut_with(&ig, |x, &y| *x += y);
+        Zip::from(input_gradient.axis_iter_mut(Axis(0)))
+            .and(output_gradient.axis_iter(Axis(0)))
+            .par_for_each(|mut input_grad_sample, output_grad_sample| {
+                for ki in 0..k {
+                    for ci in 0..c {
+                        let ig = output_grad_sample
+                            .slice(s![ki, .., ..])
+                            .conv_fft(
+                                &weights.slice(s![ki, ci, ..;-1, ..;-1]),
+                                ConvMode::Full,
+                                PaddingMode::Zeros,
+                            )
+                            .unwrap();
+                        input_grad_sample
+                            .slice_mut(s![ci, .., ..])
+                            .zip_mut_with(&ig, |x, &y| *x += y);
+                    }
                 }
-            }
-        }
+            });
 
-        weights_gradient.mapv_inplace(|v| v / b_f);
+        let weights_gradient = weights_gradient / b_f;
         let bias_gradient = output_gradient.sum_axis(Axis(0)) / b_f;
 
         self.weights_optimizer.step(

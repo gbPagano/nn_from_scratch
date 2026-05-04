@@ -1,35 +1,21 @@
-use ndarray::{array, ArrayD};
+use ndarray::{ArrayD, IxDyn};
 
 use super::Float;
 use super::Layer;
 
 pub struct ReLU<F: Float> {
-    input: ArrayD<F>,
+    output: ArrayD<F>,
 }
 
 impl<F: Float> ReLU<F> {
     pub fn new() -> Self {
         Self {
-            input: array![[]].into_dyn(),
+            output: ArrayD::zeros(IxDyn(&[0])),
         }
     }
     pub fn activate(&self, array: &ArrayD<F>) -> ArrayD<F> {
-        array.mapv(|x| {
-            if x >= F::from_f32(0.0).unwrap() {
-                x
-            } else {
-                F::from_f32(0.0).unwrap()
-            }
-        })
-    }
-    pub fn derivative(&self, array: &ArrayD<F>) -> ArrayD<F> {
-        array.mapv(|x| {
-            if x >= F::from_f32(0.0).unwrap() {
-                F::from_f32(1.0).unwrap()
-            } else {
-                F::from_f32(0.0).unwrap()
-            }
-        })
+        let zero = F::from_f32(0.0).unwrap();
+        array.mapv(|x| if x >= zero { x } else { zero })
     }
 }
 impl<F: Float> Default for ReLU<F> {
@@ -39,12 +25,16 @@ impl<F: Float> Default for ReLU<F> {
 }
 impl<F: Float> Layer<F> for ReLU<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.input = input;
-        self.activate(&self.input)
+        let zero = F::from_f32(0.0).unwrap();
+        self.output = input.mapv(|x| if x >= zero { x } else { zero });
+        self.output.clone()
     }
 
     fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
-        output_gradient * self.derivative(&self.input)
+        let zero = F::from_f32(0.0).unwrap();
+        let one = F::from_f32(1.0).unwrap();
+        let derivative = self.output.mapv(|y| if y > zero { one } else { zero });
+        output_gradient * derivative
     }
 }
 

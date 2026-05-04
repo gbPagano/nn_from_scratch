@@ -42,40 +42,43 @@ impl<F: Float> Layer<F> for MaxPooling {
             self.output_shape.1,
             self.output_shape.2,
         ));
-        self.max_indexes = Array::zeros(output.raw_dim());
-        for bi in 0..b {
-            for d in 0..self.output_shape.0 {
-                let input_2d = input.slice(s![bi, d, .., ..]);
+        self.max_indexes = Array4::zeros(output.raw_dim());
 
-                for i in 0..self.output_shape.1 {
-                    for j in 0..self.output_shape.2 {
-                        let start_h = i * self.stride;
-                        let start_w = j * self.stride;
+        let kernel_size = self.kernel_size;
+        let stride = self.stride;
+        let in_h = self.input_shape.1;
+        let in_w = self.input_shape.2;
+        let (out_d, out_h, out_w) = self.output_shape;
 
-                        let end_h = (start_h + self.kernel_size).min(self.input_shape.1);
-                        let end_w = (start_w + self.kernel_size).min(self.input_shape.2);
-
-                        let pool_region = input_2d.slice(s![start_h..end_h, start_w..end_w]);
-                        let (max_value, max_idx) = pool_region.indexed_iter().fold(
-                            (F::from_f32(f32::NEG_INFINITY).unwrap(), 0),
-                            |(max_val, max_idx), (idx, &val)| {
-                                if val > max_val {
-                                    (
-                                        val,
-                                        (start_h + idx.0) * self.input_shape.2 + start_w + idx.1,
-                                    )
-                                } else {
-                                    (max_val, max_idx)
-                                }
-                            },
-                        );
-
-                        output[[bi, d, i, j]] = max_value;
-                        self.max_indexes[[bi, d, i, j]] = max_idx
+        Zip::from(input.axis_iter(Axis(0)))
+            .and(output.axis_iter_mut(Axis(0)))
+            .and(self.max_indexes.axis_iter_mut(Axis(0)))
+            .par_for_each(|input_sample, mut output_sample, mut idx_sample| {
+                for d in 0..out_d {
+                    let input_2d = input_sample.slice(s![d, .., ..]);
+                    for i in 0..out_h {
+                        for j in 0..out_w {
+                            let start_h = i * stride;
+                            let start_w = j * stride;
+                            let end_h = (start_h + kernel_size).min(in_h);
+                            let end_w = (start_w + kernel_size).min(in_w);
+                            let pool_region = input_2d.slice(s![start_h..end_h, start_w..end_w]);
+                            let (max_value, max_idx) = pool_region.indexed_iter().fold(
+                                (F::from_f32(f32::NEG_INFINITY).unwrap(), 0),
+                                |(max_val, max_idx), (idx, &val)| {
+                                    if val > max_val {
+                                        (val, (start_h + idx.0) * in_w + start_w + idx.1)
+                                    } else {
+                                        (max_val, max_idx)
+                                    }
+                                },
+                            );
+                            output_sample[[d, i, j]] = max_value;
+                            idx_sample[[d, i, j]] = max_idx;
+                        }
                     }
                 }
-            }
-        }
+            });
 
         output.into_dyn()
     }
@@ -89,21 +92,26 @@ impl<F: Float> Layer<F> for MaxPooling {
             self.input_shape.1,
             self.input_shape.2,
         ));
-        for bi in 0..b {
-            for d in 0..self.input_shape.0 {
-                for i in 0..self.output_shape.1 {
-                    for j in 0..self.output_shape.2 {
-                        let max_idx = self.max_indexes[[bi, d, i, j]];
-                        let grad_val = output_gradient[[bi, d, i, j]];
+        let in_w = self.input_shape.2;
+        let in_d = self.input_shape.0;
+        let (_, out_h, out_w) = self.output_shape;
 
-                        let row = max_idx / self.input_shape.2;
-                        let col = max_idx % self.input_shape.2;
-
-                        input_gradient[[bi, d, row, col]] += grad_val;
+        Zip::from(input_gradient.axis_iter_mut(Axis(0)))
+            .and(output_gradient.axis_iter(Axis(0)))
+            .and(self.max_indexes.axis_iter(Axis(0)))
+            .par_for_each(|mut input_grad_sample, output_grad_sample, idx_sample| {
+                for d in 0..in_d {
+                    for i in 0..out_h {
+                        for j in 0..out_w {
+                            let max_idx = idx_sample[[d, i, j]];
+                            let grad_val = output_grad_sample[[d, i, j]];
+                            let row = max_idx / in_w;
+                            let col = max_idx % in_w;
+                            input_grad_sample[[d, row, col]] += grad_val;
+                        }
                     }
                 }
-            }
-        }
+            });
         input_gradient.into_dyn()
     }
 

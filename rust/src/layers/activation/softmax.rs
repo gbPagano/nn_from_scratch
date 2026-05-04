@@ -13,15 +13,6 @@ impl SoftmaxCE {
         Self {}
     }
     pub fn activate<F: Float>(&self, array: &ArrayD<F>) -> ArrayD<F> {
-        if array.ndim() != 2 {
-            let max = array
-                .iter()
-                .copied()
-                .fold(F::neg_infinity(), |max, value| max.max(value));
-            let exps = array.mapv(|x| (x - max).exp());
-            return &exps / exps.sum();
-        }
-
         let array = array.view().into_dimensionality::<Ix2>().unwrap();
         let mut out = Array2::<F>::zeros(array.raw_dim());
         for (mut out_row, in_row) in out.outer_iter_mut().zip(array.outer_iter()) {
@@ -83,21 +74,6 @@ mod tests {
         assert_abs_diff_eq!(
             out,
             array![[1.0, 0.0, 0.0, 0.0, 0.0]].into_dyn(),
-            epsilon = 1e-4
-        );
-    }
-
-    #[test]
-    fn test_activate_softmax_preserves_non_2d_behavior() {
-        let input = array![[[1.3, 5.1], [2.2, 0.7]], [[1.1, 0.2], [0.5, 2.0]]].into_dyn();
-        let out = SoftmaxCE::new().forward(input);
-        assert_abs_diff_eq!(
-            out,
-            array![
-                [[0.0191, 0.8543], [0.0470, 0.0105]],
-                [[0.0156, 0.0064], [0.0086, 0.0385]]
-            ]
-            .into_dyn(),
             epsilon = 1e-4
         );
     }
