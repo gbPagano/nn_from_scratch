@@ -1,6 +1,7 @@
 extern crate blas_src;
 
 use ndarray::ArrayD;
+use serde::{Deserialize, Serialize};
 
 use super::optimizer::OptimizerConfig;
 use super::Float;
@@ -14,6 +15,12 @@ mod flatten;
 pub use flatten::*;
 mod pooling;
 pub use pooling::*;
+
+#[derive(Serialize, Deserialize)]
+pub struct LayerParameters<F> {
+    pub weights: Option<ArrayD<F>>,
+    pub bias: Option<ArrayD<F>>,
+}
 
 pub trait Layer<F: Float> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F>;
@@ -29,6 +36,8 @@ pub trait Layer<F: Float> {
     fn get_bias(&self) -> Option<ArrayD<F>> {
         None
     }
+    fn set_weights(&mut self, _weights: ArrayD<F>) {}
+    fn set_bias(&mut self, _bias: ArrayD<F>) {}
     fn set_optimizer(&mut self, _config: &OptimizerConfig<F>) {}
 }
 

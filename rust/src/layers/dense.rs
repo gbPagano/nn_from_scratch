@@ -1,6 +1,7 @@
 extern crate blas_src;
 
 use ndarray::{arr2, Array2, ArrayD, Ix2};
+use ndarray_rand::rand::Rng;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
 
@@ -25,6 +26,19 @@ impl<F: Float> Dense<F> {
         let std = (2.0 / inputs as f32).sqrt();
         let weights = Array2::random((outputs, inputs), Normal::new(0.0, std).unwrap())
             .mapv(|v: f32| F::from_f32(v).unwrap());
+        Self::with_weights(weights)
+    }
+
+    pub fn new_with_rng<R: Rng>(inputs: usize, outputs: usize, rng: &mut R) -> Self {
+        // He/Kaiming initialization: std = sqrt(2 / fan_in), suited to ReLU/ELU.
+        let std = (2.0 / inputs as f32).sqrt();
+        let weights = Array2::random_using((outputs, inputs), Normal::new(0.0, std).unwrap(), rng)
+            .mapv(|v: f32| F::from_f32(v).unwrap());
+        Self::with_weights(weights)
+    }
+
+    fn with_weights(weights: Array2<F>) -> Self {
+        let outputs = weights.shape()[0];
         let bias = Array2::zeros((outputs, 1));
         Dense {
             weights,
@@ -93,6 +107,14 @@ impl<F: Float> Layer<F> for Dense<F> {
 
     fn get_bias(&self) -> Option<ArrayD<F>> {
         Some(self.bias.clone().into_dyn())
+    }
+
+    fn set_weights(&mut self, weights: ArrayD<F>) {
+        self.weights = weights.into_dimensionality::<Ix2>().unwrap();
+    }
+
+    fn set_bias(&mut self, bias: ArrayD<F>) {
+        self.bias = bias.into_dimensionality::<Ix2>().unwrap();
     }
 
     fn set_optimizer(&mut self, config: &OptimizerConfig<F>) {

@@ -2,6 +2,7 @@ extern crate blas_src;
 
 use ndarray::*;
 use ndarray_conv::*;
+use ndarray_rand::rand::Rng;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
 
@@ -23,7 +24,7 @@ pub struct Conv<F: Float> {
 
 impl<F: Float> Conv<F> {
     pub fn new(input_shape: (usize, usize, usize), kernels: usize, kernel_size: usize) -> Self {
-        let (input_depth, input_height, input_width) = input_shape;
+        let (input_depth, _, _) = input_shape;
 
         // He/Kaiming initialization: std = sqrt(2 / fan_in), suited to ReLU/ELU.
         let fan_in = (input_depth * kernel_size * kernel_size) as f32;
@@ -33,7 +34,33 @@ impl<F: Float> Conv<F> {
             Normal::new(0.0, std).unwrap(),
         )
         .mapv(|v: f32| F::from_f32(v).unwrap());
+        Self::with_weights(input_shape, weights)
+    }
 
+    pub fn new_with_rng<R: Rng>(
+        input_shape: (usize, usize, usize),
+        kernels: usize,
+        kernel_size: usize,
+        rng: &mut R,
+    ) -> Self {
+        let (input_depth, _, _) = input_shape;
+
+        // He/Kaiming initialization: std = sqrt(2 / fan_in), suited to ReLU/ELU.
+        let fan_in = (input_depth * kernel_size * kernel_size) as f32;
+        let std = (2.0 / fan_in).sqrt();
+        let weights = Array4::random_using(
+            (kernels, input_depth, kernel_size, kernel_size),
+            Normal::new(0.0, std).unwrap(),
+            rng,
+        )
+        .mapv(|v: f32| F::from_f32(v).unwrap());
+        Self::with_weights(input_shape, weights)
+    }
+
+    fn with_weights(input_shape: (usize, usize, usize), weights: Array4<F>) -> Self {
+        let (input_depth, input_height, input_width) = input_shape;
+        let kernels = weights.shape()[0];
+        let kernel_size = weights.shape()[2];
         let bias = Array3::zeros((
             kernels,
             input_height - kernel_size + 1,
@@ -155,6 +182,14 @@ impl<F: Float> Layer<F> for Conv<F> {
 
     fn get_bias(&self) -> Option<ArrayD<F>> {
         Some(self.bias.clone().into_dyn())
+    }
+
+    fn set_weights(&mut self, weights: ArrayD<F>) {
+        self.weights = weights.into_dimensionality::<Ix4>().unwrap();
+    }
+
+    fn set_bias(&mut self, bias: ArrayD<F>) {
+        self.bias = bias.into_dimensionality::<Ix3>().unwrap();
     }
 
     fn set_optimizer(&mut self, config: &OptimizerConfig<F>) {

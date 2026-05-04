@@ -1,5 +1,6 @@
 extern crate blas_src;
 
+use clap::Parser;
 use csv::{ReaderBuilder, WriterBuilder};
 use ndarray::prelude::*;
 use ndarray::Array2;
@@ -8,6 +9,8 @@ use num_traits::Float;
 use std::fs::File;
 
 use chrono::Local;
+use ndarray_rand::rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use nn_from_scratch::layers::activation::*;
 use nn_from_scratch::layers::*;
@@ -16,42 +19,99 @@ use nn_from_scratch::*;
 
 type F = f32;
 
-fn main() {
-    let (x_train, y_train) = load_mnist_dataset("datasets/kaggle_mnist/train_split.csv");
-    let (x_val, y_val) = load_mnist_dataset("datasets/kaggle_mnist/val_split.csv");
-    println!(
-        "Loaded {} train samples and {} validation samples.",
-        x_train.len(),
-        x_val.len()
-    );
+#[derive(Parser, Debug)]
+struct Cli {
+    #[arg(long, conflicts_with = "predict")]
+    save: Option<String>,
+    #[arg(long, conflicts_with = "save")]
+    predict: Option<String>,
+    #[arg(long, default_value = "datasets/kaggle_mnist/train_split.csv")]
+    train_path: String,
+    #[arg(long, default_value = "datasets/kaggle_mnist/val_split.csv")]
+    val_path: String,
+    #[arg(long, default_value = "datasets/kaggle_mnist/test.csv")]
+    test_path: String,
+    #[arg(long, default_value_t = default_prediction_path())]
+    prediction_path: String,
+    #[arg(long, default_value_t = 20)]
+    epochs: usize,
+    #[arg(long)]
+    seed: Option<u64>,
+}
 
-    let mut nn: NeuralNetwork<F> = NeuralNetwork::new(box_layers![
-        Conv::new((1, 28, 28), 8, 3),
-        ELU::new(1.0 as F),
-        MaxPooling::new((8, 26, 26), 2, 2),
-        Conv::new((8, 13, 13), 16, 3),
-        ELU::new(1.0 as F),
-        MaxPooling::new((16, 11, 11), 2, 2),
-        Flatten::new((16, 6, 6)),
-        Dense::new(16 * 6 * 6, 64),
-        ELU::new(1.0 as F),
-        Dense::new(64, 10),
-        SoftmaxCE::new()
-    ]);
-    nn.fit_with_validation(
-        &x_train,
-        &y_train,
-        Some((&x_val, &y_val)),
-        NNConfig {
-            epochs: 20,
-            learning_rate: 0.001,
-            batch_size: 32,
-            evaluate_step: 1,
-            loss_function: CrossEntropySoftmax::new().into(),
-            optimizer: OptimizerConfig::adam_default(),
-        },
-    );
-    kaggle_predictions(&mut nn);
+fn main() {
+    let cli = Cli::parse();
+    let mut nn = build_network(cli.seed);
+
+    if let Some(checkpoint_path) = cli.predict {
+        nn.load(&checkpoint_path);
+    } else {
+        let (x_train, y_train) = load_mnist_dataset(&cli.train_path);
+        let (x_val, y_val) = load_mnist_dataset(&cli.val_path);
+        println!(
+            "Loaded {} train samples and {} validation samples.",
+            x_train.len(),
+            x_val.len()
+        );
+
+        nn.fit_with_validation(
+            &x_train,
+            &y_train,
+            Some((&x_val, &y_val)),
+            NNConfig {
+                epochs: cli.epochs,
+                learning_rate: 0.001,
+                batch_size: 32,
+                evaluate_step: 1,
+                loss_function: CrossEntropySoftmax::new().into(),
+                optimizer: OptimizerConfig::adam_default(),
+                seed: cli.seed,
+            },
+        );
+
+        if let Some(save_path) = cli.save {
+            nn.save(&save_path);
+        }
+    }
+
+    kaggle_predictions(&mut nn, &cli.test_path, &cli.prediction_path);
+}
+
+fn default_prediction_path() -> String {
+    format!("kaggle-submission-{}.csv", Local::now().format("%Y%m%d%H%M"))
+}
+
+fn build_network(seed: Option<u64>) -> NeuralNetwork<'static, F> {
+    if let Some(seed) = seed {
+        let mut rng = StdRng::seed_from_u64(seed);
+        NeuralNetwork::new(box_layers![
+            Conv::new_with_rng((1, 28, 28), 8, 3, &mut rng),
+            ELU::new(1.0 as F),
+            MaxPooling::new((8, 26, 26), 2, 2),
+            Conv::new_with_rng((8, 13, 13), 16, 3, &mut rng),
+            ELU::new(1.0 as F),
+            MaxPooling::new((16, 11, 11), 2, 2),
+            Flatten::new((16, 6, 6)),
+            Dense::new_with_rng(16 * 6 * 6, 64, &mut rng),
+            ELU::new(1.0 as F),
+            Dense::new_with_rng(64, 10, &mut rng),
+            SoftmaxCE::new()
+        ])
+    } else {
+        NeuralNetwork::new(box_layers![
+            Conv::new((1, 28, 28), 8, 3),
+            ELU::new(1.0 as F),
+            MaxPooling::new((8, 26, 26), 2, 2),
+            Conv::new((8, 13, 13), 16, 3),
+            ELU::new(1.0 as F),
+            MaxPooling::new((16, 11, 11), 2, 2),
+            Flatten::new((16, 6, 6)),
+            Dense::new(16 * 6 * 6, 64),
+            ELU::new(1.0 as F),
+            Dense::new(64, 10),
+            SoftmaxCE::new()
+        ])
+    }
 }
 
 fn number_to_neurons<F: Float>(n: usize, negative_output: F, positive_output: F) -> Vec<F> {
@@ -105,9 +165,9 @@ struct Row {
     label: usize,
 }
 
-fn kaggle_predictions(nn: &mut NeuralNetwork<F>) {
+fn kaggle_predictions(nn: &mut NeuralNetwork<F>, test_path: &str, prediction_path: &str) {
     let x_test = {
-        let file = File::open("datasets/kaggle_mnist/test.csv").unwrap();
+        let file = File::open(test_path).unwrap();
         let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
         let mut data_train: Array2<F> = reader.deserialize_array2_dynamic().unwrap();
 
@@ -133,8 +193,7 @@ fn kaggle_predictions(nn: &mut NeuralNetwork<F>) {
     }
 
     {
-        let filename = format!("kaggle-submission-{}.csv", Local::now().format("%Y%m%d%H%M"));
-        let file = File::create(filename).unwrap();
+        let file = File::create(prediction_path).unwrap();
         let mut writer = WriterBuilder::new().from_writer(file);
 
         for row in predictions {

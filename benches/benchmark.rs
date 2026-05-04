@@ -48,6 +48,7 @@ fn bench_nn(c: &mut Criterion) {
                         batch_size: 1,
                         learning_rate: 0.5,
                         optimizer: OptimizerConfig::SGD,
+                        seed: None,
                     },
                 );
             },
@@ -83,6 +84,7 @@ fn bench_nn(c: &mut Criterion) {
                         batch_size: 8,
                         learning_rate: 0.02,
                         optimizer: OptimizerConfig::SGD,
+                        seed: None,
                     },
                 );
             },
