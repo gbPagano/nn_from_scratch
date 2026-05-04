@@ -56,41 +56,43 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         let mut permutation: Vec<usize> = (0..x_train.len()).collect();
         let mut rng = rand::thread_rng();
         for epoch in 1..=config.epochs {
-            let mut loss = F::from_f32(0.0).unwrap();
             permutation.shuffle(&mut rng);
             for &idx in permutation.iter() {
                 let x = unsafe { x_train.get_unchecked(idx) };
                 let y = unsafe { y_train.get_unchecked(idx) };
 
                 let out = self.forward(x.clone());
-                loss += config.loss_function.loss(y, &out);
                 let grad = config.loss_function.gradient(y, &out);
                 self.backward(grad, config.learning_rate, config.batch_size);
             }
-            loss /= F::from_usize(x_train.len()).unwrap();
             if self.terminal_output && epoch % config.evaluate_step == 0 {
-                let train_accuracy = self.evaluate(x_train, y_train);
+                let (train_accuracy, train_loss) =
+                    self.evaluate(x_train, y_train, config.loss_function.as_ref());
                 let val_str = match validation {
                     Some((x_val, y_val)) => {
-                        let val_accuracy = self.evaluate(x_val, y_val);
+                        let (val_accuracy, val_loss) =
+                            self.evaluate(x_val, y_val, config.loss_function.as_ref());
                         format!(
-                            " | Val Accuracy: {}",
+                            " | Val Loss: {} | Val Accuracy: {}",
+                            format!("{:.8}", val_loss).to_string().colorize("bold blue"),
                             format!("{:.4}", val_accuracy)
                                 .to_string()
-                                .colorize("bold cyan")
+                                .colorize("bold blue"),
                         )
                     }
                     None => String::new(),
                 };
                 pb.write(format!(
-                    "Epoch: {} | Loss: {} | Train Accuracy: {}{}",
+                    "Epoch: {} | Train Loss: {} | Train Accuracy: {}{}",
                     format!(
                         "{: >width$}",
                         epoch,
                         width = config.epochs.to_string().len()
                     )
                     .colorize("bold cyan"),
-                    format!("{:.8}", loss).to_string().colorize("bold cyan"),
+                    format!("{:.8}", train_loss)
+                        .to_string()
+                        .colorize("bold cyan"),
                     format!("{:.4}", train_accuracy)
                         .to_string()
                         .colorize("bold cyan"),
@@ -104,11 +106,18 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         }
     }
 
-    pub fn evaluate(&mut self, x_vec: &[ArrayD<F>], y_vec: &[ArrayD<F>]) -> f64 {
+    pub fn evaluate(
+        &mut self,
+        x_vec: &[ArrayD<F>],
+        y_vec: &[ArrayD<F>],
+        loss_fn: &dyn Loss<F>,
+    ) -> (f64, F) {
         let total = y_vec.len();
         let mut correct = 0;
+        let mut loss = F::from_f32(0.0).unwrap();
         for (x, y) in x_vec.iter().zip(y_vec.iter()) {
             let out = self.forward(x.to_owned().into_dyn());
+            loss += loss_fn.loss(y, &out);
             let (pred, _) = out
                 .iter()
                 .enumerate()
@@ -123,7 +132,9 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
                 correct += 1;
             }
         }
-        correct as f64 / total as f64
+        let accuracy = correct as f64 / total as f64;
+        let avg_loss = loss / F::from_usize(total).unwrap();
+        (accuracy, avg_loss)
     }
 
     fn get_bar(&self, total: usize) -> RichProgress {
