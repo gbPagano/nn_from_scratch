@@ -15,24 +15,36 @@ use nn_from_scratch::*;
 type F = f32;
 
 fn main() {
-    let (x_train, y_train) = load_mnist_dataset();
+    let (x_train, y_train) = load_mnist_dataset("datasets/kaggle_mnist/train_split.csv");
+    let (x_val, y_val) = load_mnist_dataset("datasets/kaggle_mnist/val_split.csv");
+    println!(
+        "Loaded {} train samples and {} validation samples.",
+        x_train.len(),
+        x_val.len()
+    );
 
     let mut nn: NeuralNetwork<F> = NeuralNetwork::new(box_layers![
-        Dense::new(784, 28),
+        Conv::new((1, 28, 28), 8, 3),
         ELU::new(1.0 as F),
-        Dense::new(28, 19),
+        MaxPooling::new((8, 26, 26), 2, 2),
+        Conv::new((8, 13, 13), 16, 3),
         ELU::new(1.0 as F),
-        Dense::new(19, 10),
+        MaxPooling::new((16, 11, 11), 2, 2),
+        Flatten::new((16, 6, 6)),
+        Dense::new(16 * 6 * 6, 64),
+        ELU::new(1.0 as F),
+        Dense::new(64, 10),
         SoftmaxCE::new()
     ]);
-    nn.fit(
+    nn.fit_with_validation(
         &x_train,
         &y_train,
+        Some((&x_val, &y_val)),
         NNConfig {
-            epochs: 100,
+            epochs: 20,
             learning_rate: 0.01,
-            batch_size: 8,
-            evaluate_step: 5,
+            batch_size: 32,
+            evaluate_step: 1,
             loss_function: CrossEntropySoftmax::new().into(),
         },
     );
@@ -45,8 +57,8 @@ fn number_to_neurons<F: Float>(n: usize, negative_output: F, positive_output: F)
     res
 }
 
-fn load_mnist_dataset() -> (Vec<ArrayD<F>>, Vec<ArrayD<F>>) {
-    let file = File::open("datasets/kaggle_mnist/train.csv").unwrap();
+fn load_mnist_dataset(path: &str) -> (Vec<ArrayD<F>>, Vec<ArrayD<F>>) {
+    let file = File::open(path).unwrap();
     let mut reader = ReaderBuilder::new().has_headers(true).from_reader(file);
     let data_train: Array2<F> = reader.deserialize_array2_dynamic().unwrap();
 
@@ -64,9 +76,9 @@ fn load_mnist_dataset() -> (Vec<ArrayD<F>>, Vec<ArrayD<F>>) {
     )
     .unwrap();
 
+    let n_samples = x_train.shape()[0];
     let x_train = x_train
-        .insert_axis(ndarray::Axis(2))
-        .into_dimensionality::<Ix3>()
+        .into_shape((n_samples, 1, 28, 28))
         .unwrap()
         .axis_iter(Axis(0))
         .map(|item| item.into_owned().into_dyn())
@@ -99,10 +111,8 @@ fn kaggle_predictions(nn: &mut NeuralNetwork<F>) {
         data_train.map_inplace(|x| *x /= 255.0);
         data_train
     };
-    let x_test = x_test
-        .insert_axis(ndarray::Axis(2))
-        .into_dimensionality::<Ix3>()
-        .unwrap();
+    let n_test = x_test.shape()[0];
+    let x_test = x_test.into_shape((n_test, 1, 28, 28)).unwrap();
 
     let mut predictions: Vec<Row> = Vec::new();
     for (idx, x) in x_test.axis_iter(Axis(0)).enumerate() {

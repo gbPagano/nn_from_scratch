@@ -37,6 +37,16 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
     }
 
     pub fn fit(&mut self, x_train: &[ArrayD<F>], y_train: &[ArrayD<F>], config: NNConfig<F>) {
+        self.fit_with_validation(x_train, y_train, None, config)
+    }
+
+    pub fn fit_with_validation(
+        &mut self,
+        x_train: &[ArrayD<F>],
+        y_train: &[ArrayD<F>],
+        validation: Option<(&[ArrayD<F>], &[ArrayD<F>])>,
+        config: NNConfig<F>,
+    ) {
         term::init(stderr().is_terminal());
         let mut pb = self.get_bar(config.epochs);
         if self.terminal_output {
@@ -60,8 +70,20 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             loss /= F::from_usize(x_train.len()).unwrap();
             if self.terminal_output && epoch % config.evaluate_step == 0 {
                 let train_accuracy = self.evaluate(x_train, y_train);
+                let val_str = match validation {
+                    Some((x_val, y_val)) => {
+                        let val_accuracy = self.evaluate(x_val, y_val);
+                        format!(
+                            " | Val Accuracy: {}",
+                            format!("{:.4}", val_accuracy)
+                                .to_string()
+                                .colorize("bold cyan")
+                        )
+                    }
+                    None => String::new(),
+                };
                 pb.write(format!(
-                    "Epoch: {} | Loss: {} | Train Accuracy: {}",
+                    "Epoch: {} | Loss: {} | Train Accuracy: {}{}",
                     format!(
                         "{: >width$}",
                         epoch,
@@ -71,7 +93,8 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
                     format!("{:.8}", loss).to_string().colorize("bold cyan"),
                     format!("{:.4}", train_accuracy)
                         .to_string()
-                        .colorize("bold cyan")
+                        .colorize("bold cyan"),
+                    val_str,
                 ))
                 .unwrap();
             }
