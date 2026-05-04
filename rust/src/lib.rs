@@ -11,6 +11,8 @@ pub mod layers;
 pub mod loss;
 mod neural_network;
 pub use neural_network::*;
+mod optimizer;
+pub use optimizer::*;
 
 pub trait Float:
     float::Float

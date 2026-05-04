@@ -5,6 +5,7 @@ use ndarray_conv::*;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
 
+use super::super::optimizer::{Optimizer, OptimizerConfig, SGD};
 use super::super::Float;
 use super::Layer;
 
@@ -16,6 +17,8 @@ pub struct Conv<F: Float> {
     input_shape: (usize, usize, usize),
     weights_gradient: Array4<F>,
     bias_gradient: Array3<F>,
+    weights_optimizer: Box<dyn Optimizer<F>>,
+    bias_optimizer: Box<dyn Optimizer<F>>,
 }
 
 impl<F: Float> Conv<F> {
@@ -45,6 +48,8 @@ impl<F: Float> Conv<F> {
             input_shape,
             bias_gradient: arr3(&[[[]]]),
             weights_gradient: Array4::zeros((kernels, input_depth, kernel_size, kernel_size)),
+            weights_optimizer: Box::new(SGD),
+            bias_optimizer: Box::new(SGD),
         }
     }
 }
@@ -121,16 +126,22 @@ impl<F: Float> Layer<F> for Conv<F> {
             self.weights_gradient += &weights_gradient;
             self.bias_gradient += &output_gradient;
         }
-        // gradient descent as optimizer
         self.curr_batch += 1;
         if self.curr_batch == batch_size {
-            Zip::from(&mut self.weights)
-                .and(&self.weights_gradient)
-                .for_each(|a, &b| *a -= b * learning_rate / F::from_usize(batch_size).unwrap());
+            let inv_batch = F::from_f32(1.0).unwrap() / F::from_usize(batch_size).unwrap();
+            self.weights_gradient *= inv_batch;
+            self.bias_gradient *= inv_batch;
 
-            Zip::from(&mut self.bias)
-                .and(&self.bias_gradient)
-                .for_each(|a, &b| *a -= b * learning_rate / F::from_usize(batch_size).unwrap());
+            self.weights_optimizer.step(
+                self.weights.view_mut().into_dyn(),
+                self.weights_gradient.view().into_dyn(),
+                learning_rate,
+            );
+            self.bias_optimizer.step(
+                self.bias.view_mut().into_dyn(),
+                self.bias_gradient.view().into_dyn(),
+                learning_rate,
+            );
 
             self.curr_batch = 0;
         }
@@ -144,6 +155,11 @@ impl<F: Float> Layer<F> for Conv<F> {
 
     fn get_bias(&self) -> Option<ArrayD<F>> {
         Some(self.bias.clone().into_dyn())
+    }
+
+    fn set_optimizer(&mut self, config: &OptimizerConfig<F>) {
+        self.weights_optimizer = config.build();
+        self.bias_optimizer = config.build();
     }
 }
 

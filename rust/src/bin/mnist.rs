@@ -42,10 +42,11 @@ fn main() {
         Some((&x_val, &y_val)),
         NNConfig {
             epochs: 20,
-            learning_rate: 0.01,
+            learning_rate: 0.001,
             batch_size: 32,
             evaluate_step: 1,
             loss_function: CrossEntropySoftmax::new().into(),
+            optimizer: OptimizerConfig::adam_default(),
         },
     );
     kaggle_predictions(&mut nn);

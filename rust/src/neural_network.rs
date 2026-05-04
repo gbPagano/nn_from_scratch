@@ -7,6 +7,7 @@ use std::io::{stderr, IsTerminal};
 
 use super::layers::Layer;
 use super::loss::{HalfMSE, Loss};
+use super::optimizer::OptimizerConfig;
 use super::Float;
 
 pub struct NeuralNetwork<'a, F: Float> {
@@ -51,6 +52,10 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         let mut pb = self.get_bar(config.epochs);
         if self.terminal_output {
             pb.update(0).unwrap();
+        }
+
+        for layer in self.layers.iter_mut() {
+            layer.set_optimizer(&config.optimizer);
         }
 
         let mut permutation: Vec<usize> = (0..x_train.len()).collect();
@@ -162,6 +167,7 @@ pub struct NNConfig<F: Float> {
     pub batch_size: usize,
     pub evaluate_step: usize,
     pub loss_function: Box<dyn Loss<F>>,
+    pub optimizer: OptimizerConfig<F>,
 }
 
 impl<F: Float> NNConfig<F> {
@@ -171,6 +177,7 @@ impl<F: Float> NNConfig<F> {
         batch_size: usize,
         evaluate_step: usize,
         loss_function: Box<dyn Loss<F>>,
+        optimizer: OptimizerConfig<F>,
     ) -> Self {
         NNConfig {
             epochs,
@@ -178,6 +185,7 @@ impl<F: Float> NNConfig<F> {
             batch_size,
             evaluate_step,
             loss_function,
+            optimizer,
         }
     }
 }
@@ -189,6 +197,7 @@ impl<F: Float> Default for NNConfig<F> {
             batch_size: 1,
             evaluate_step: 10,
             loss_function: HalfMSE::new().into(),
+            optimizer: OptimizerConfig::SGD,
         }
     }
 }

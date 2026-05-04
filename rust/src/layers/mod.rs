@@ -2,6 +2,9 @@ extern crate blas_src;
 
 use ndarray::ArrayD;
 
+use super::optimizer::OptimizerConfig;
+use super::Float;
+
 pub mod activation;
 mod dense;
 pub use dense::*;
@@ -12,7 +15,7 @@ pub use flatten::*;
 mod pooling;
 pub use pooling::*;
 
-pub trait Layer<F> {
+pub trait Layer<F: Float> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F>;
     fn backward(
         &mut self,
@@ -26,6 +29,7 @@ pub trait Layer<F> {
     fn get_bias(&self) -> Option<ArrayD<F>> {
         None
     }
+    fn set_optimizer(&mut self, _config: &OptimizerConfig<F>) {}
 }
 
 #[macro_export]

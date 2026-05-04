@@ -35,7 +35,7 @@ fn bench_nn(c: &mut Criterion) {
             || {
                 let x_train = vec![inputs.clone()];
                 let y_train = vec![desired.clone()];
-               (x_train, y_train)
+                (x_train, y_train)
             },
             |(x_train, y_train)| {
                 nn.fit(
@@ -47,6 +47,7 @@ fn bench_nn(c: &mut Criterion) {
                         loss_function: HalfMSE::new().into(),
                         batch_size: 1,
                         learning_rate: 0.5,
+                        optimizer: OptimizerConfig::SGD,
                     },
                 );
             },
@@ -81,6 +82,7 @@ fn bench_nn(c: &mut Criterion) {
                         loss_function: HalfMSE::new().into(),
                         batch_size: 8,
                         learning_rate: 0.02,
+                        optimizer: OptimizerConfig::SGD,
                     },
                 );
             },
