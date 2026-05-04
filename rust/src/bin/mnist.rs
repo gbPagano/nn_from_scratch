@@ -7,6 +7,8 @@ use ndarray_csv::Array2Reader;
 use num_traits::Float;
 use std::fs::File;
 
+use chrono::Local;
+
 use nn_from_scratch::layers::activation::*;
 use nn_from_scratch::layers::*;
 use nn_from_scratch::loss::*;
@@ -131,7 +133,8 @@ fn kaggle_predictions(nn: &mut NeuralNetwork<F>) {
     }
 
     {
-        let file = File::create("kaggle-submission.csv").unwrap();
+        let filename = format!("kaggle-submission-{}.csv", Local::now().format("%Y%m%d%H%M"));
+        let file = File::create(filename).unwrap();
         let mut writer = WriterBuilder::new().from_writer(file);
 
         for row in predictions {
