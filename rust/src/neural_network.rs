@@ -103,7 +103,11 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             layer.set_optimizer(&config.optimizer);
         }
 
-        let mut permutation: Vec<usize> = (0..x_train.len()).collect();
+        let n_train = x_train.len();
+        let x_full = stack_all(x_train);
+        let y_full = stack_all(y_train);
+
+        let mut permutation: Vec<usize> = (0..n_train).collect();
         let mut seeded_rng;
         let mut thread_rng;
         let rng: &mut dyn RngCore = if let Some(seed) = config.seed {
@@ -117,8 +121,8 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         for epoch in 1..=config.epochs {
             permutation.shuffle(&mut *rng);
             for batch_idx in permutation.chunks(config.batch_size) {
-                let x_batch = stack_views(x_train, batch_idx);
-                let y_batch = stack_views(y_train, batch_idx);
+                let x_batch = x_full.select(Axis(0), batch_idx);
+                let y_batch = y_full.select(Axis(0), batch_idx);
 
                 let out = self.forward(x_batch);
                 let grad = config.loss_function.gradient(&y_batch, &out);
@@ -183,14 +187,19 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         let total = y_vec.len();
         let mut correct = 0;
         let mut loss_acc = F::from_f32(0.0).unwrap();
-        let indices: Vec<usize> = (0..total).collect();
-        for batch_idx in indices.chunks(batch_size) {
-            let x_batch = stack_views(x_vec, batch_idx);
-            let y_batch = stack_views(y_vec, batch_idx);
+        let x_full = stack_all(x_vec);
+        let y_full = stack_all(y_vec);
+        for (x_chunk, y_chunk) in x_full
+            .axis_chunks_iter(Axis(0), batch_size)
+            .zip(y_full.axis_chunks_iter(Axis(0), batch_size))
+        {
+            let x_batch = x_chunk.to_owned();
+            let y_batch = y_chunk.to_owned();
+            let batch_len = y_batch.shape()[0];
             let out = self.forward(x_batch);
 
             let batch_loss = loss_fn.loss(&y_batch, &out);
-            loss_acc += batch_loss * F::from_usize(batch_idx.len()).unwrap();
+            loss_acc += batch_loss * F::from_usize(batch_len).unwrap();
 
             let out2 = out.view().into_dimensionality::<Ix2>().unwrap();
             let y2 = y_batch.view().into_dimensionality::<Ix2>().unwrap();
@@ -224,8 +233,8 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
     }
 }
 
-fn stack_views<F: Float>(samples: &[ArrayD<F>], indices: &[usize]) -> ArrayD<F> {
-    let views: Vec<_> = indices.iter().map(|&i| samples[i].view()).collect();
+fn stack_all<F: Float>(samples: &[ArrayD<F>]) -> ArrayD<F> {
+    let views: Vec<_> = samples.iter().map(|s| s.view()).collect();
     ndarray::stack(Axis(0), &views).unwrap()
 }
 
