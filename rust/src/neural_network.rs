@@ -10,9 +10,10 @@ use std::fs::File;
 use std::io::{stderr, IsTerminal};
 
 use super::layers::{Layer, LayerParameters};
-use super::loss::{HalfMSE, Loss};
-use super::optimizer::OptimizerConfig;
-use super::Float;
+use super::loss::Loss;
+use super::{Float, NNConfig};
+
+type Metrics<F> = (f64, F);
 
 #[derive(Serialize, Deserialize)]
 struct NetworkCheckpoint<F> {
@@ -46,7 +47,12 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         }
     }
 
-    pub fn fit(&mut self, x_train: &[ArrayD<F>], y_train: &[ArrayD<F>], config: NNConfig<F>) {
+    pub fn fit(
+        &mut self,
+        x_train: &[ArrayD<F>],
+        y_train: &[ArrayD<F>],
+        config: NNConfig<F>,
+    ) -> TrainingSummary<F> {
         self.fit_with_validation(x_train, y_train, None, config)
     }
 
@@ -55,14 +61,7 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         F: Serialize,
     {
         let checkpoint = NetworkCheckpoint {
-            layers: self
-                .layers
-                .iter()
-                .map(|layer| LayerParameters {
-                    weights: layer.get_weights(),
-                    bias: layer.get_bias(),
-                })
-                .collect(),
+            layers: self.layer_parameters(),
         };
         let file = File::create(path).unwrap();
         bincode::serialize_into(file, &checkpoint).unwrap();
@@ -76,14 +75,7 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         let checkpoint: NetworkCheckpoint<F> = bincode::deserialize_from(file).unwrap();
         assert_eq!(self.layers.len(), checkpoint.layers.len());
 
-        for (layer, parameters) in self.layers.iter_mut().zip(checkpoint.layers.into_iter()) {
-            if let Some(weights) = parameters.weights {
-                layer.set_weights(weights);
-            }
-            if let Some(bias) = parameters.bias {
-                layer.set_bias(bias);
-            }
-        }
+        self.set_layer_parameters(&checkpoint.layers);
     }
 
     pub fn fit_with_validation(
@@ -92,7 +84,9 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         y_train: &[ArrayD<F>],
         validation: Option<(&[ArrayD<F>], &[ArrayD<F>])>,
         config: NNConfig<F>,
-    ) {
+    ) -> TrainingSummary<F> {
+        validate_training_config(validation, &config);
+
         term::init(stderr().is_terminal());
         let mut pb = self.get_bar(config.epochs);
         if self.terminal_output {
@@ -118,6 +112,11 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
             &mut thread_rng
         };
 
+        let mut summary = TrainingSummary::default();
+        let mut early_stopping_state = config
+            .early_stopping
+            .map(|_| EarlyStoppingState::<F>::default());
+
         for epoch in 1..=config.epochs {
             permutation.shuffle(&mut *rng);
             for batch_idx in permutation.chunks(config.batch_size) {
@@ -128,53 +127,95 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
                 let grad = config.loss_function.gradient(&y_batch, &out);
                 self.backward(grad, config.learning_rate);
             }
-            if self.terminal_output && epoch % config.evaluate_step == 0 {
-                let (train_accuracy, train_loss) = self.evaluate(
-                    x_train,
-                    y_train,
-                    config.loss_function.as_ref(),
-                    config.batch_size,
-                );
-                let val_str = match validation {
-                    Some((x_val, y_val)) => {
-                        let (val_accuracy, val_loss) = self.evaluate(
+
+            let mut should_stop = false;
+            let mut stop_message = None;
+            if should_evaluate_epoch(
+                epoch,
+                &config,
+                self.terminal_output,
+                early_stopping_state.is_some(),
+            ) {
+                let train_metrics = if self.terminal_output {
+                    Some(self.evaluate(
+                        x_train,
+                        y_train,
+                        config.loss_function.as_ref(),
+                        config.batch_size,
+                    ))
+                } else {
+                    None
+                };
+
+                let validation_metrics = if validation.is_some() {
+                    validation.map(|(x_val, y_val)| {
+                        self.evaluate(
                             x_val,
                             y_val,
                             config.loss_function.as_ref(),
                             config.batch_size,
-                        );
-                        format!(
-                            " | Val Loss: {} | Val Accuracy: {}",
-                            format!("{:.8}", val_loss).to_string().colorize("bold blue"),
-                            format!("{:.4}", val_accuracy)
-                                .to_string()
-                                .colorize("bold blue"),
                         )
-                    }
-                    None => String::new(),
+                    })
+                } else {
+                    None
                 };
-                pb.write(format!(
-                    "Epoch: {} | Train Loss: {} | Train Accuracy: {}{}",
-                    format!(
-                        "{: >width$}",
+
+                if let (Some(early_stopping), Some(state), Some(validation_metrics)) = (
+                    config.early_stopping,
+                    early_stopping_state.as_mut(),
+                    validation_metrics,
+                ) {
+                    let update = update_early_stopping(
+                        state,
+                        early_stopping,
+                        validation_metrics,
                         epoch,
-                        width = config.epochs.to_string().len()
-                    )
-                    .colorize("bold cyan"),
-                    format!("{:.8}", train_loss)
-                        .to_string()
-                        .colorize("bold cyan"),
-                    format!("{:.4}", train_accuracy)
-                        .to_string()
-                        .colorize("bold cyan"),
-                    val_str,
-                ))
-                .unwrap();
+                        &mut summary,
+                    );
+
+                    if update.improved && early_stopping.restore_best_weights {
+                        state.best_parameters = Some(self.layer_parameters());
+                    }
+
+                    should_stop = update.should_stop();
+                    stop_message = update.stop_message;
+                }
+
+                if self.terminal_output {
+                    write_epoch_log(
+                        &mut pb,
+                        epoch,
+                        config.epochs,
+                        train_metrics.unwrap(),
+                        validation_metrics,
+                    );
+                }
             }
+
+            summary.epochs_trained = epoch;
             if self.terminal_output {
                 pb.update(1).unwrap();
             }
+
+            if should_stop {
+                if self.terminal_output {
+                    pb.write(stop_message.unwrap()).unwrap();
+                }
+                break;
+            }
         }
+
+        if let (Some(early_stopping), Some(state)) =
+            (config.early_stopping, early_stopping_state.as_ref())
+        {
+            if early_stopping.restore_best_weights {
+                if let Some(best_parameters) = &state.best_parameters {
+                    self.set_layer_parameters(best_parameters);
+                }
+            }
+        }
+
+        summary
     }
 
     pub fn evaluate(
@@ -214,6 +255,28 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         (accuracy, avg_loss)
     }
 
+    fn layer_parameters(&self) -> Vec<LayerParameters<F>> {
+        self.layers
+            .iter()
+            .map(|layer| LayerParameters {
+                weights: layer.get_weights(),
+                bias: layer.get_bias(),
+            })
+            .collect()
+    }
+
+    fn set_layer_parameters(&mut self, parameters: &[LayerParameters<F>]) {
+        assert_eq!(self.layers.len(), parameters.len());
+        for (layer, parameters) in self.layers.iter_mut().zip(parameters.iter()) {
+            if let Some(weights) = &parameters.weights {
+                layer.set_weights(weights.clone());
+            }
+            if let Some(bias) = &parameters.bias {
+                layer.set_bias(bias.clone());
+            }
+        }
+    }
+
     fn get_bar(&self, total: usize) -> RichProgress {
         RichProgress::new(
             tqdm!(total = total, ncols = 40, force_refresh = true),
@@ -233,6 +296,167 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
     }
 }
 
+fn validate_training_config<F: Float>(
+    validation: Option<(&[ArrayD<F>], &[ArrayD<F>])>,
+    config: &NNConfig<F>,
+) {
+    assert!(
+        config.batch_size > 0,
+        "batch_size must be greater than zero"
+    );
+    assert!(
+        config.evaluate_step > 0,
+        "evaluate_step must be greater than zero"
+    );
+    if config.early_stopping.is_some() {
+        assert!(
+            validation.is_some(),
+            "early stopping requires a validation set"
+        );
+    }
+}
+
+fn should_evaluate_epoch<F: Float>(
+    epoch: usize,
+    config: &NNConfig<F>,
+    terminal_output: bool,
+    tracks_early_stopping: bool,
+) -> bool {
+    epoch % config.evaluate_step == 0 && (terminal_output || tracks_early_stopping)
+}
+
+fn write_epoch_log<F: Float>(
+    pb: &mut RichProgress,
+    epoch: usize,
+    total_epochs: usize,
+    train_metrics: Metrics<F>,
+    validation_metrics: Option<Metrics<F>>,
+) {
+    let (train_accuracy, train_loss) = train_metrics;
+    pb.write(format!(
+        "Epoch: {} | Train Loss: {} | Train Accuracy: {}{}",
+        format!("{: >width$}", epoch, width = total_epochs.to_string().len()).colorize("bold cyan"),
+        format!("{:.8}", train_loss)
+            .to_string()
+            .colorize("bold cyan"),
+        format!("{:.4}", train_accuracy)
+            .to_string()
+            .colorize("bold cyan"),
+        format_validation_metrics(validation_metrics),
+    ))
+    .unwrap();
+}
+
+fn format_validation_metrics<F: Float>(validation_metrics: Option<Metrics<F>>) -> String {
+    match validation_metrics {
+        Some((val_accuracy, val_loss)) => format!(
+            " | Val Loss: {} | Val Accuracy: {}",
+            format!("{:.8}", val_loss).to_string().colorize("bold blue"),
+            format!("{:.4}", val_accuracy)
+                .to_string()
+                .colorize("bold blue"),
+        ),
+        None => String::new(),
+    }
+}
+
+struct EarlyStoppingUpdate {
+    improved: bool,
+    stop_message: Option<String>,
+}
+
+impl EarlyStoppingUpdate {
+    fn should_stop(&self) -> bool {
+        self.stop_message.is_some()
+    }
+}
+
+fn update_early_stopping<F: Float>(
+    state: &mut EarlyStoppingState<F>,
+    early_stopping: super::EarlyStoppingConfig,
+    validation_metrics: Metrics<F>,
+    epoch: usize,
+    summary: &mut TrainingSummary<F>,
+) -> EarlyStoppingUpdate {
+    let (val_accuracy, val_loss) = validation_metrics;
+    let score = early_stopping.metric.score(val_accuracy, val_loss);
+    let improved = state.best_score.map_or(true, |best_score| {
+        early_stopping.metric.is_improvement(score, best_score)
+    });
+
+    if improved {
+        state.best_score = Some(score);
+        state.best_epoch = Some(epoch);
+        state.evaluations_without_improvement = 0;
+        summary.best_epoch = Some(epoch);
+        summary.best_validation_accuracy = Some(val_accuracy);
+        summary.best_validation_loss = Some(val_loss);
+        return EarlyStoppingUpdate {
+            improved: true,
+            stop_message: None,
+        };
+    }
+
+    state.evaluations_without_improvement += 1;
+    let stop_message =
+        (state.evaluations_without_improvement >= early_stopping.patience).then(|| {
+            summary.stopped_early = true;
+            format!(
+                "Early stopping at epoch {} | Best epoch: {} | Best {}: {}",
+                epoch,
+                state.best_epoch.unwrap(),
+                early_stopping.metric.label(),
+                early_stopping
+                    .metric
+                    .format_score(state.best_score.unwrap())
+            )
+        });
+
+    EarlyStoppingUpdate {
+        improved: false,
+        stop_message,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrainingSummary<F: Float> {
+    pub epochs_trained: usize,
+    pub stopped_early: bool,
+    pub best_epoch: Option<usize>,
+    pub best_validation_accuracy: Option<f64>,
+    pub best_validation_loss: Option<F>,
+}
+
+impl<F: Float> Default for TrainingSummary<F> {
+    fn default() -> Self {
+        Self {
+            epochs_trained: 0,
+            stopped_early: false,
+            best_epoch: None,
+            best_validation_accuracy: None,
+            best_validation_loss: None,
+        }
+    }
+}
+
+struct EarlyStoppingState<F: Float> {
+    best_score: Option<F>,
+    best_epoch: Option<usize>,
+    evaluations_without_improvement: usize,
+    best_parameters: Option<Vec<LayerParameters<F>>>,
+}
+
+impl<F: Float> Default for EarlyStoppingState<F> {
+    fn default() -> Self {
+        Self {
+            best_score: None,
+            best_epoch: None,
+            evaluations_without_improvement: 0,
+            best_parameters: None,
+        }
+    }
+}
+
 fn stack_all<F: Float>(samples: &[ArrayD<F>]) -> ArrayD<F> {
     let views: Vec<_> = samples.iter().map(|s| s.view()).collect();
     ndarray::stack(Axis(0), &views).unwrap()
@@ -244,50 +468,6 @@ fn argmax<F: Float>(row: &ArrayView1<F>) -> usize {
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .map(|(i, _)| i)
         .unwrap()
-}
-
-pub struct NNConfig<F: Float> {
-    pub epochs: usize,
-    pub learning_rate: F,
-    pub batch_size: usize,
-    pub evaluate_step: usize,
-    pub loss_function: Box<dyn Loss<F>>,
-    pub optimizer: OptimizerConfig<F>,
-    pub seed: Option<u64>,
-}
-
-impl<F: Float> NNConfig<F> {
-    pub fn new(
-        epochs: usize,
-        learning_rate: F,
-        batch_size: usize,
-        evaluate_step: usize,
-        loss_function: Box<dyn Loss<F>>,
-        optimizer: OptimizerConfig<F>,
-    ) -> Self {
-        NNConfig {
-            epochs,
-            learning_rate,
-            batch_size,
-            evaluate_step,
-            loss_function,
-            optimizer,
-            seed: None,
-        }
-    }
-}
-impl<F: Float> Default for NNConfig<F> {
-    fn default() -> Self {
-        NNConfig {
-            epochs: 1,
-            learning_rate: F::from_f32(0.5).unwrap(),
-            batch_size: 1,
-            evaluate_step: 10,
-            loss_function: HalfMSE::new().into(),
-            optimizer: OptimizerConfig::SGD,
-            seed: None,
-        }
-    }
 }
 
 #[cfg(test)]

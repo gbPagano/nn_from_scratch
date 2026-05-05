@@ -7,8 +7,10 @@ use std::iter::Sum;
 use std::marker::{Send, Sync};
 use std::ops::{AddAssign, DivAssign, SubAssign};
 
+mod config;
 pub mod layers;
 pub mod loss;
+pub use config::*;
 mod neural_network;
 pub use neural_network::*;
 mod optimizer;

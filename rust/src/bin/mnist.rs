@@ -1,6 +1,6 @@
 extern crate blas_src;
 
-use clap::Parser;
+use clap::{ArgAction, Parser, ValueEnum};
 use csv::{ReaderBuilder, WriterBuilder};
 use ndarray::prelude::*;
 use ndarray::Array2;
@@ -35,8 +35,29 @@ struct Cli {
     prediction_path: String,
     #[arg(long, default_value_t = 20)]
     epochs: usize,
+    #[arg(long, default_value_t = 5)]
+    early_stopping_patience: usize,
+    #[arg(long, value_enum, default_value_t = CliEarlyStoppingMetric::Loss)]
+    early_stopping_metric: CliEarlyStoppingMetric,
+    #[arg(long, default_value_t = true, action = ArgAction::Set)]
+    restore_best_weights: bool,
     #[arg(long)]
     seed: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CliEarlyStoppingMetric {
+    Loss,
+    Accuracy,
+}
+
+impl From<CliEarlyStoppingMetric> for EarlyStoppingMetric {
+    fn from(metric: CliEarlyStoppingMetric) -> Self {
+        match metric {
+            CliEarlyStoppingMetric::Loss => EarlyStoppingMetric::ValidationLoss,
+            CliEarlyStoppingMetric::Accuracy => EarlyStoppingMetric::ValidationAccuracy,
+        }
+    }
 }
 
 fn main() {
@@ -54,7 +75,7 @@ fn main() {
             x_val.len()
         );
 
-        nn.fit_with_validation(
+        let training_summary = nn.fit_with_validation(
             &x_train,
             &y_train,
             Some((&x_val, &y_val)),
@@ -66,8 +87,16 @@ fn main() {
                 loss_function: CrossEntropySoftmax::new().into(),
                 optimizer: OptimizerConfig::adam_default(),
                 seed: cli.seed,
+                early_stopping: (cli.early_stopping_patience > 0).then(|| {
+                    EarlyStoppingConfig::new(
+                        cli.early_stopping_metric.into(),
+                        cli.early_stopping_patience,
+                        cli.restore_best_weights,
+                    )
+                }),
             },
         );
+        log_training_summary(&training_summary);
 
         if let Some(save_path) = cli.save {
             nn.save(&save_path);
@@ -75,6 +104,28 @@ fn main() {
     }
 
     kaggle_predictions(&mut nn, &cli.test_path, &cli.prediction_path);
+}
+
+fn log_training_summary(summary: &TrainingSummary<F>) {
+    println!(
+        "Training finished after {} epoch(s).",
+        summary.epochs_trained
+    );
+
+    if summary.stopped_early {
+        println!("Early stopping triggered.");
+    }
+
+    if let (Some(best_epoch), Some(best_val_accuracy), Some(best_val_loss)) = (
+        summary.best_epoch,
+        summary.best_validation_accuracy,
+        summary.best_validation_loss,
+    ) {
+        println!(
+            "Best validation checkpoint: epoch {} | loss {:.8} | accuracy {:.4}",
+            best_epoch, best_val_loss, best_val_accuracy
+        );
+    }
 }
 
 fn default_prediction_path() -> String {

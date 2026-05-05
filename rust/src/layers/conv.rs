@@ -208,7 +208,10 @@ fn col2im<F: Float>(
     input_gradient
         .axis_iter_mut(Axis(0))
         .into_par_iter()
-        .zip(cols.axis_chunks_iter(Axis(0), rows_per_sample).into_par_iter())
+        .zip(
+            cols.axis_chunks_iter(Axis(0), rows_per_sample)
+                .into_par_iter(),
+        )
         .for_each(|(mut sample_grad, chunk)| {
             for oh in 0..h_out {
                 for ow in 0..w_out {

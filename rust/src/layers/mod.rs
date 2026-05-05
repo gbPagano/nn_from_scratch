@@ -16,7 +16,7 @@ pub use flatten::*;
 mod pooling;
 pub use pooling::*;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LayerParameters<F> {
     pub weights: Option<ArrayD<F>>,
     pub bias: Option<ArrayD<F>>,
