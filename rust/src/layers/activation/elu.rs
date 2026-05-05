@@ -1,4 +1,4 @@
-use ndarray::{ArrayD, IxDyn};
+use ndarray::{ArrayD, IxDyn, Zip};
 
 use super::Float;
 use super::Layer;
@@ -35,28 +35,32 @@ impl<F: Float> Default for ELU<F> {
 }
 
 impl<F: Float> Layer<F> for ELU<F> {
-    fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
+    fn forward(&mut self, mut input: ArrayD<F>) -> ArrayD<F> {
         let zero = F::from_f32(0.0).unwrap();
         let one = F::from_f32(1.0).unwrap();
         let alpha = self.alpha;
-        self.output = input.mapv(|x| {
+        input.mapv_inplace(|x| {
             if x >= zero {
                 x
             } else {
                 alpha * (x.exp() - one)
             }
         });
-        self.output.clone()
+        self.output = input.clone();
+        input
     }
 
-    fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
+    fn backward(&mut self, mut output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
         let zero = F::from_f32(0.0).unwrap();
         let one = F::from_f32(1.0).unwrap();
         let alpha = self.alpha;
-        let derivative = self
-            .output
-            .mapv(|y| if y >= zero { one } else { y + alpha });
-        output_gradient * derivative
+        Zip::from(&mut output_gradient)
+            .and(&self.output)
+            .for_each(|g, &y| {
+                let d = if y >= zero { one } else { y + alpha };
+                *g = *g * d;
+            });
+        output_gradient
     }
 }
 

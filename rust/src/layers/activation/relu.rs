@@ -1,4 +1,4 @@
-use ndarray::{ArrayD, IxDyn};
+use ndarray::{ArrayD, IxDyn, Zip};
 
 use super::Float;
 use super::Layer;
@@ -24,17 +24,23 @@ impl<F: Float> Default for ReLU<F> {
     }
 }
 impl<F: Float> Layer<F> for ReLU<F> {
-    fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
+    fn forward(&mut self, mut input: ArrayD<F>) -> ArrayD<F> {
         let zero = F::from_f32(0.0).unwrap();
-        self.output = input.mapv(|x| if x >= zero { x } else { zero });
-        self.output.clone()
+        input.mapv_inplace(|x| if x >= zero { x } else { zero });
+        self.output = input.clone();
+        input
     }
 
-    fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
+    fn backward(&mut self, mut output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
         let zero = F::from_f32(0.0).unwrap();
-        let one = F::from_f32(1.0).unwrap();
-        let derivative = self.output.mapv(|y| if y > zero { one } else { zero });
-        output_gradient * derivative
+        Zip::from(&mut output_gradient)
+            .and(&self.output)
+            .for_each(|g, &y| {
+                if y <= zero {
+                    *g = zero;
+                }
+            });
+        output_gradient
     }
 }
 

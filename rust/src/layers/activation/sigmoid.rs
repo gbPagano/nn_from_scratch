@@ -1,4 +1,4 @@
-use ndarray::{ArrayD, IxDyn};
+use ndarray::{ArrayD, IxDyn, Zip};
 
 use super::Float;
 use super::Layer;
@@ -25,15 +25,21 @@ impl<F: Float> Sigmoid<F> {
 }
 
 impl<F: Float> Layer<F> for Sigmoid<F> {
-    fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.output = self.activate(&input);
-        self.output.clone()
+    fn forward(&mut self, mut input: ArrayD<F>) -> ArrayD<F> {
+        let one = F::from_f32(1.0).unwrap();
+        input.mapv_inplace(|x| one / (one + F::exp(-x)));
+        self.output = input.clone();
+        input
     }
 
-    fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
+    fn backward(&mut self, mut output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
         let one = F::from_f32(1.0).unwrap();
-        let derivative = self.output.mapv(|y| y * (one - y));
-        output_gradient * derivative
+        Zip::from(&mut output_gradient)
+            .and(&self.output)
+            .for_each(|g, &y| {
+                *g = *g * (y * (one - y));
+            });
+        output_gradient
     }
 }
 impl<F: Float> From<Sigmoid<F>> for Box<dyn Layer<F>> {

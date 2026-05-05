@@ -1,4 +1,4 @@
-use ndarray::{ArrayD, IxDyn};
+use ndarray::{ArrayD, IxDyn, Zip};
 
 use super::Float;
 use super::Layer;
@@ -25,15 +25,20 @@ impl<F: Float> TanH<F> {
 }
 
 impl<F: Float> Layer<F> for TanH<F> {
-    fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.output = input.mapv(|x| x.tanh());
-        self.output.clone()
+    fn forward(&mut self, mut input: ArrayD<F>) -> ArrayD<F> {
+        input.mapv_inplace(|x| x.tanh());
+        self.output = input.clone();
+        input
     }
 
-    fn backward(&mut self, output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
+    fn backward(&mut self, mut output_gradient: ArrayD<F>, _learning_rate: F) -> ArrayD<F> {
         let one = F::from_f32(1.0).unwrap();
-        let derivative = self.output.mapv(|y| one - y * y);
-        output_gradient * derivative
+        Zip::from(&mut output_gradient)
+            .and(&self.output)
+            .for_each(|g, &y| {
+                *g = *g * (one - y * y);
+            });
+        output_gradient
     }
 }
 
