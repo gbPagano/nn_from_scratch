@@ -13,7 +13,7 @@ use super::Layer;
 pub struct Conv<F: Float> {
     pub weights: Array4<F>,
     pub bias: Array3<F>,
-    input: Array4<F>,
+    input_dim: (usize, usize, usize, usize),
     input_cols: Array2<F>,
     weights_optimizer: Box<dyn Optimizer<F>>,
     bias_optimizer: Box<dyn Optimizer<F>>,
@@ -67,7 +67,7 @@ impl<F: Float> Conv<F> {
         Self {
             weights,
             bias,
-            input: Array4::zeros((0, 0, 0, 0)),
+            input_dim: (0, 0, 0, 0),
             input_cols: Array2::zeros((0, 0)),
             weights_optimizer: Box::new(SGD),
             bias_optimizer: Box::new(SGD),
@@ -77,13 +77,14 @@ impl<F: Float> Conv<F> {
 
 impl<F: Float> Layer<F> for Conv<F> {
     fn forward(&mut self, input: ArrayD<F>) -> ArrayD<F> {
-        self.input = input.into_dimensionality::<Ix4>().unwrap();
-        let b = self.input.shape()[0];
+        let input = input.into_dimensionality::<Ix4>().unwrap();
+        self.input_dim = input.dim();
+        let b = input.shape()[0];
         let (k, _c, kh, kw) = self.weights.dim();
-        let h_out = self.input.shape()[2] - kh + 1;
-        let w_out = self.input.shape()[3] - kw + 1;
+        let h_out = input.shape()[2] - kh + 1;
+        let w_out = input.shape()[3] - kw + 1;
 
-        self.input_cols = im2col(&self.input, kh, kw);
+        self.input_cols = im2col(&input, kh, kw);
         let weights_col = self
             .weights
             .view()
@@ -124,7 +125,7 @@ impl<F: Float> Layer<F> for Conv<F> {
             .unwrap()
             / b_f;
         let input_gradient_col = output_gradient_col.dot(&weights_col);
-        let input_gradient = col2im(&input_gradient_col, self.input.dim(), kh, kw, h_out, w_out);
+        let input_gradient = col2im(&input_gradient_col, self.input_dim, kh, kw, h_out, w_out);
         let bias_gradient = output_gradient.sum_axis(Axis(0)) / b_f;
 
         self.weights_optimizer.step(
