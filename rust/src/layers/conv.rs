@@ -1,11 +1,9 @@
 extern crate blas_src;
 
 use ndarray::*;
-use ndarray_conv::*;
 use ndarray_rand::rand::Rng;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
-use rayon::prelude::*;
 
 use super::super::optimizer::{Optimizer, OptimizerConfig, SGD};
 use super::super::Float;
@@ -15,6 +13,7 @@ pub struct Conv<F: Float> {
     pub weights: Array4<F>,
     pub bias: Array3<F>,
     input: Array4<F>,
+    input_cols: Array2<F>,
     weights_optimizer: Box<dyn Optimizer<F>>,
     bias_optimizer: Box<dyn Optimizer<F>>,
 }
@@ -68,6 +67,7 @@ impl<F: Float> Conv<F> {
             weights,
             bias,
             input: Array4::zeros((0, 0, 0, 0)),
+            input_cols: Array2::zeros((0, 0)),
             weights_optimizer: Box::new(SGD),
             bias_optimizer: Box::new(SGD),
         }
@@ -82,27 +82,19 @@ impl<F: Float> Layer<F> for Conv<F> {
         let h_out = self.input.shape()[2] - kh + 1;
         let w_out = self.input.shape()[3] - kw + 1;
 
-        let mut output: Array4<F> = Array4::zeros((b, k, h_out, w_out));
-        let bias = &self.bias;
-        let weights = &self.weights;
-
-        Zip::indexed(self.input.axis_iter(Axis(0)))
-            .and(output.axis_iter_mut(Axis(0)))
-            .par_for_each(|_bi, input_sample, mut output_sample| {
-                for ki in 0..k {
-                    let conv = input_sample
-                        .conv_fft(
-                            &weights.slice(s![ki, .., .., ..]),
-                            ConvMode::Valid,
-                            PaddingMode::Zeros,
-                        )
-                        .unwrap();
-                    output_sample
-                        .slice_mut(s![ki, .., ..])
-                        .assign(&conv.index_axis(Axis(0), 0));
-                }
-                output_sample += bias;
-            });
+        self.input_cols = im2col(&self.input, kh, kw);
+        let weights_col = self
+            .weights
+            .view()
+            .into_shape((k, self.input_cols.shape()[1]))
+            .unwrap();
+        let output_col = self.input_cols.dot(&weights_col.t());
+        let mut output = output_col
+            .into_shape((b, h_out, w_out, k))
+            .unwrap()
+            .permuted_axes([0, 3, 1, 2]);
+        output += &self.bias;
+        let output = output.as_standard_layout().to_owned();
 
         output.into_dyn()
     }
@@ -113,64 +105,25 @@ impl<F: Float> Layer<F> for Conv<F> {
         let b_f = F::from_usize(b).unwrap();
         let (k, c, kh, kw) = self.weights.dim();
 
-        let input = &self.input;
-        let weights = &self.weights;
+        let h_out = output_gradient.shape()[2];
+        let w_out = output_gradient.shape()[3];
+        let output_gradient_col = output_gradient
+            .view()
+            .permuted_axes([0, 2, 3, 1])
+            .as_standard_layout()
+            .to_owned()
+            .into_shape((b * h_out * w_out, k))
+            .unwrap();
+        let weights_col = self.weights.view().into_shape((k, c * kh * kw)).unwrap();
 
-        let weights_gradient: Array4<F> = (0..b)
-            .into_par_iter()
-            .zip(input.axis_iter(Axis(0)).into_par_iter())
-            .zip(output_gradient.axis_iter(Axis(0)).into_par_iter())
-            .fold(
-                || Array4::<F>::zeros((k, c, kh, kw)),
-                |mut wg_local, ((_bi, input_sample), output_grad_sample)| {
-                    for ki in 0..k {
-                        for ci in 0..c {
-                            let wg = input_sample
-                                .slice(s![ci, .., ..])
-                                .conv_fft(
-                                    &output_grad_sample.slice(s![ki, .., ..]),
-                                    ConvMode::Valid,
-                                    PaddingMode::Zeros,
-                                )
-                                .unwrap();
-                            wg_local
-                                .slice_mut(s![ki, ci, .., ..])
-                                .zip_mut_with(&wg, |x, &y| *x += y);
-                        }
-                    }
-                    wg_local
-                },
-            )
-            .reduce(
-                || Array4::<F>::zeros((k, c, kh, kw)),
-                |mut acc, partial| {
-                    acc += &partial;
-                    acc
-                },
-            );
-
-        let mut input_gradient: Array4<F> = Array4::zeros(self.input.dim());
-        Zip::from(input_gradient.axis_iter_mut(Axis(0)))
-            .and(output_gradient.axis_iter(Axis(0)))
-            .par_for_each(|mut input_grad_sample, output_grad_sample| {
-                for ki in 0..k {
-                    for ci in 0..c {
-                        let ig = output_grad_sample
-                            .slice(s![ki, .., ..])
-                            .conv_fft(
-                                &weights.slice(s![ki, ci, ..;-1, ..;-1]),
-                                ConvMode::Full,
-                                PaddingMode::Zeros,
-                            )
-                            .unwrap();
-                        input_grad_sample
-                            .slice_mut(s![ci, .., ..])
-                            .zip_mut_with(&ig, |x, &y| *x += y);
-                    }
-                }
-            });
-
-        let weights_gradient = weights_gradient / b_f;
+        let weights_gradient = output_gradient_col
+            .t()
+            .dot(&self.input_cols)
+            .into_shape((k, c, kh, kw))
+            .unwrap()
+            / b_f;
+        let input_gradient_col = output_gradient_col.dot(&weights_col);
+        let input_gradient = col2im(&input_gradient_col, self.input.dim(), kh, kw, h_out, w_out);
         let bias_gradient = output_gradient.sum_axis(Axis(0)) / b_f;
 
         self.weights_optimizer.step(
@@ -207,6 +160,61 @@ impl<F: Float> Layer<F> for Conv<F> {
         self.weights_optimizer = config.build();
         self.bias_optimizer = config.build();
     }
+}
+
+fn im2col<F: Float>(input: &Array4<F>, kh: usize, kw: usize) -> Array2<F> {
+    let (b, c, h, w) = input.dim();
+    let h_out = h - kh + 1;
+    let w_out = w - kw + 1;
+    let mut cols = Array2::zeros((b * h_out * w_out, c * kh * kw));
+
+    for bi in 0..b {
+        for oh in 0..h_out {
+            for ow in 0..w_out {
+                let row = (bi * h_out + oh) * w_out + ow;
+                for ci in 0..c {
+                    for r in 0..kh {
+                        for s in 0..kw {
+                            let col = (ci * kh + r) * kw + s;
+                            cols[[row, col]] = input[[bi, ci, oh + r, ow + s]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    cols
+}
+
+fn col2im<F: Float>(
+    cols: &Array2<F>,
+    input_dim: (usize, usize, usize, usize),
+    kh: usize,
+    kw: usize,
+    h_out: usize,
+    w_out: usize,
+) -> Array4<F> {
+    let (b, c, h, w) = input_dim;
+    let mut input_gradient = Array4::zeros((b, c, h, w));
+
+    for bi in 0..b {
+        for oh in 0..h_out {
+            for ow in 0..w_out {
+                let row = (bi * h_out + oh) * w_out + ow;
+                for ci in 0..c {
+                    for r in 0..kh {
+                        for s in 0..kw {
+                            let col = (ci * kh + r) * kw + s;
+                            input_gradient[[bi, ci, oh + r, ow + s]] += cols[[row, col]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    input_gradient
 }
 
 impl<F: Float> From<Conv<F>> for Box<dyn Layer<F>> {
