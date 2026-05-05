@@ -62,17 +62,17 @@ impl<F: Float> Layer<F> for MaxPooling {
                             let start_w = j * stride;
                             let end_h = (start_h + kernel_size).min(in_h);
                             let end_w = (start_w + kernel_size).min(in_w);
-                            let pool_region = input_2d.slice(s![start_h..end_h, start_w..end_w]);
-                            let (max_value, max_idx) = pool_region.indexed_iter().fold(
-                                (F::from_f32(f32::NEG_INFINITY).unwrap(), 0),
-                                |(max_val, max_idx), (idx, &val)| {
-                                    if val > max_val {
-                                        (val, (start_h + idx.0) * in_w + start_w + idx.1)
-                                    } else {
-                                        (max_val, max_idx)
+                            let mut max_value = F::from_f32(f32::NEG_INFINITY).unwrap();
+                            let mut max_idx = 0;
+                            for h in start_h..end_h {
+                                for w in start_w..end_w {
+                                    let val = input_2d[[h, w]];
+                                    if val > max_value {
+                                        max_value = val;
+                                        max_idx = h * in_w + w;
                                     }
-                                },
-                            );
+                                }
+                            }
                             output_sample[[d, i, j]] = max_value;
                             idx_sample[[d, i, j]] = max_idx;
                         }
