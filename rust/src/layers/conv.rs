@@ -4,6 +4,7 @@ use ndarray::*;
 use ndarray_rand::rand::Rng;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
+use rayon::prelude::*;
 
 use super::super::optimizer::{Optimizer, OptimizerConfig, SGD};
 use super::super::Float;
@@ -163,26 +164,30 @@ impl<F: Float> Layer<F> for Conv<F> {
 }
 
 fn im2col<F: Float>(input: &Array4<F>, kh: usize, kw: usize) -> Array2<F> {
-    let (b, c, h, w) = input.dim();
+    let (_b, c, h, w) = input.dim();
     let h_out = h - kh + 1;
     let w_out = w - kw + 1;
-    let mut cols = Array2::zeros((b * h_out * w_out, c * kh * kw));
+    let rows_per_sample = h_out * w_out;
+    let mut cols = Array2::zeros((input.dim().0 * rows_per_sample, c * kh * kw));
 
-    for bi in 0..b {
-        for oh in 0..h_out {
-            for ow in 0..w_out {
-                let row = (bi * h_out + oh) * w_out + ow;
-                for ci in 0..c {
-                    for r in 0..kh {
-                        for s in 0..kw {
-                            let col = (ci * kh + r) * kw + s;
-                            cols[[row, col]] = input[[bi, ci, oh + r, ow + s]];
+    cols.axis_chunks_iter_mut(Axis(0), rows_per_sample)
+        .into_par_iter()
+        .zip(input.axis_iter(Axis(0)).into_par_iter())
+        .for_each(|(mut chunk, sample)| {
+            for oh in 0..h_out {
+                for ow in 0..w_out {
+                    let row = oh * w_out + ow;
+                    for ci in 0..c {
+                        for r in 0..kh {
+                            for s in 0..kw {
+                                let col = (ci * kh + r) * kw + s;
+                                chunk[[row, col]] = sample[[ci, oh + r, ow + s]];
+                            }
                         }
                     }
                 }
             }
-        }
-    }
+        });
 
     cols
 }
@@ -196,23 +201,28 @@ fn col2im<F: Float>(
     w_out: usize,
 ) -> Array4<F> {
     let (b, c, h, w) = input_dim;
+    let rows_per_sample = h_out * w_out;
     let mut input_gradient = Array4::zeros((b, c, h, w));
 
-    for bi in 0..b {
-        for oh in 0..h_out {
-            for ow in 0..w_out {
-                let row = (bi * h_out + oh) * w_out + ow;
-                for ci in 0..c {
-                    for r in 0..kh {
-                        for s in 0..kw {
-                            let col = (ci * kh + r) * kw + s;
-                            input_gradient[[bi, ci, oh + r, ow + s]] += cols[[row, col]];
+    input_gradient
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(cols.axis_chunks_iter(Axis(0), rows_per_sample).into_par_iter())
+        .for_each(|(mut sample_grad, chunk)| {
+            for oh in 0..h_out {
+                for ow in 0..w_out {
+                    let row = oh * w_out + ow;
+                    for ci in 0..c {
+                        for r in 0..kh {
+                            for s in 0..kw {
+                                let col = (ci * kh + r) * kw + s;
+                                sample_grad[[ci, oh + r, ow + s]] += chunk[[row, col]];
+                            }
                         }
                     }
                 }
             }
-        }
-    }
+        });
 
     input_gradient
 }
