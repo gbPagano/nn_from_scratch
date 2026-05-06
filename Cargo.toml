@@ -2,6 +2,9 @@
 name = "nn_from_scratch"
 version = "0.2.0"
 edition = "2021"
+authors = ["gbPagano <guilhermebpagano@gmail.com>"]
+license = "MIT"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
