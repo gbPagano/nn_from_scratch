@@ -1,6 +1,7 @@
 use crate::loss::{HalfMSE, Loss};
 use crate::optimizer::OptimizerConfig;
 use crate::Float;
+use std::sync::{atomic::AtomicBool, Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EarlyStoppingMetric {
@@ -72,6 +73,7 @@ pub struct NNConfig<F: Float> {
     pub optimizer: OptimizerConfig<F>,
     pub seed: Option<u64>,
     pub early_stopping: Option<EarlyStoppingConfig>,
+    pub stop_signal: Option<Arc<AtomicBool>>,
 }
 
 impl<F: Float> NNConfig<F> {
@@ -92,6 +94,7 @@ impl<F: Float> NNConfig<F> {
             optimizer,
             seed: None,
             early_stopping: None,
+            stop_signal: None,
         }
     }
 }
@@ -107,6 +110,7 @@ impl<F: Float> Default for NNConfig<F> {
             optimizer: OptimizerConfig::SGD,
             seed: None,
             early_stopping: None,
+            stop_signal: None,
         }
     }
 }

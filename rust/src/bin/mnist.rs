@@ -11,6 +11,10 @@ use std::fs::File;
 use chrono::Local;
 use ndarray_rand::rand::SeedableRng;
 use rand::rngs::StdRng;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+};
 
 use nn_from_scratch::layers::activation::*;
 use nn_from_scratch::layers::*;
@@ -18,6 +22,9 @@ use nn_from_scratch::loss::*;
 use nn_from_scratch::*;
 
 type F = f32;
+const EXECUTION_PHASE_IDLE: usize = 0;
+const EXECUTION_PHASE_TRAINING: usize = 1;
+const EXECUTION_PHASE_PREDICTING: usize = 2;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -63,10 +70,16 @@ impl From<CliEarlyStoppingMetric> for EarlyStoppingMetric {
 fn main() {
     let cli = Cli::parse();
     let mut nn = build_network(cli.seed);
+    let mut execution_phase = None;
 
     if let Some(checkpoint_path) = cli.predict {
         nn.load(&checkpoint_path);
     } else {
+        let stop_requested = Arc::new(AtomicBool::new(false));
+        let phase = Arc::new(AtomicUsize::new(EXECUTION_PHASE_IDLE));
+        install_ctrl_c_handler(stop_requested.clone(), phase.clone());
+        execution_phase = Some((stop_requested.clone(), phase.clone()));
+
         let (x_train, y_train) = load_mnist_dataset(&cli.train_path);
         let (x_val, y_val) = load_mnist_dataset(&cli.val_path);
         println!(
@@ -75,6 +88,7 @@ fn main() {
             x_val.len()
         );
 
+        phase.store(EXECUTION_PHASE_TRAINING, Ordering::SeqCst);
         let training_summary = nn.fit_with_validation(
             &x_train,
             &y_train,
@@ -94,16 +108,45 @@ fn main() {
                         cli.restore_best_weights,
                     )
                 }),
+                stop_signal: Some(stop_requested.clone()),
             },
         );
+        phase.store(EXECUTION_PHASE_IDLE, Ordering::SeqCst);
         log_training_summary(&training_summary);
+
+        if stop_requested.load(Ordering::SeqCst) {
+            if cli.restore_best_weights && cli.early_stopping_patience > 0 {
+                println!(
+                    "Ctrl-C received during training. Continuing with the best validation checkpoint if one was recorded."
+                );
+            } else {
+                println!("Ctrl-C received during training. Continuing with the current weights.");
+            }
+        }
 
         if let Some(save_path) = cli.save {
             nn.save(&save_path);
         }
     }
 
+    if let Some((_, phase)) = &execution_phase {
+        phase.store(EXECUTION_PHASE_PREDICTING, Ordering::SeqCst);
+    }
     kaggle_predictions(&mut nn, &cli.test_path, &cli.prediction_path);
+}
+
+fn install_ctrl_c_handler(stop_requested: Arc<AtomicBool>, phase: Arc<AtomicUsize>) {
+    ctrlc::set_handler(move || {
+        if phase.load(Ordering::SeqCst) == EXECUTION_PHASE_TRAINING {
+            if stop_requested.swap(true, Ordering::SeqCst) {
+                std::process::exit(130);
+            }
+            return;
+        }
+
+        std::process::exit(130);
+    })
+    .expect("failed to install Ctrl-C handler");
 }
 
 fn log_training_summary(summary: &TrainingSummary<F>) {

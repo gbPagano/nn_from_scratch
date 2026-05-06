@@ -50,6 +50,7 @@ fn bench_nn(c: &mut Criterion) {
                         optimizer: OptimizerConfig::SGD,
                         seed: None,
                         early_stopping: None,
+                        stop_signal: None,
                     },
                 );
             },
@@ -87,6 +88,7 @@ fn bench_nn(c: &mut Criterion) {
                         optimizer: OptimizerConfig::SGD,
                         seed: None,
                         early_stopping: None,
+                        stop_signal: None,
                     },
                 );
             },

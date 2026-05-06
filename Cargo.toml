@@ -12,6 +12,7 @@ blas-src = { version = "0.10.0", features = ["openblas"] }
 criterion = "0.5.1"
 chrono = "0.4.42"
 clap = { version = "4.5.51", features = ["derive"] }
+ctrlc = "3.4.7"
 csv = "1.3.0"
 itertools = "0.12.1"
 kdam = { version = "0.5.1", features = ["rich"] }
@@ -39,5 +40,4 @@ path = "rust/src/lib.rs"
 [[bin]]
 name = "mnist"
 path = "rust/src/bin/mnist.rs"
-
 

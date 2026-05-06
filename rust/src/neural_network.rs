@@ -8,6 +8,7 @@ use rand::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{stderr, IsTerminal};
+use std::sync::atomic::Ordering;
 
 use super::layers::{Layer, LayerParameters};
 use super::loss::Loss;
@@ -116,16 +117,36 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         let mut early_stopping_state = config
             .early_stopping
             .map(|_| EarlyStoppingState::<F>::default());
+        let mut interrupted = false;
 
         for epoch in 1..=config.epochs {
+            if stop_requested(&config) {
+                interrupted = true;
+                break;
+            }
+
             permutation.shuffle(&mut *rng);
             for batch_idx in permutation.chunks(config.batch_size) {
+                if stop_requested(&config) {
+                    interrupted = true;
+                    break;
+                }
+
                 let x_batch = x_full.select(Axis(0), batch_idx);
                 let y_batch = y_full.select(Axis(0), batch_idx);
 
                 let out = self.forward(x_batch);
                 let grad = config.loss_function.gradient(&y_batch, &out);
                 self.backward(grad, config.learning_rate);
+
+                if stop_requested(&config) {
+                    interrupted = true;
+                    break;
+                }
+            }
+
+            if interrupted {
+                break;
             }
 
             let mut should_stop = false;
@@ -171,6 +192,7 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
                         validation_metrics,
                         epoch,
                         &mut summary,
+                        true,
                     );
 
                     if update.improved && early_stopping.restore_best_weights {
@@ -203,6 +225,38 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
                 }
                 break;
             }
+        }
+
+        if !interrupted && should_evaluate_final_epoch(&summary, &config) {
+            if let (Some((x_val, y_val)), Some(early_stopping), Some(state)) = (
+                validation,
+                config.early_stopping,
+                early_stopping_state.as_mut(),
+            ) {
+                let validation_metrics = self.evaluate(
+                    x_val,
+                    y_val,
+                    config.loss_function.as_ref(),
+                    config.batch_size,
+                );
+                let update = update_early_stopping(
+                    state,
+                    early_stopping,
+                    validation_metrics,
+                    summary.epochs_trained,
+                    &mut summary,
+                    false,
+                );
+
+                if update.improved && early_stopping.restore_best_weights {
+                    state.best_parameters = Some(self.layer_parameters());
+                }
+            }
+        }
+
+        if interrupted && self.terminal_output {
+            pb.write("Training interrupted by Ctrl-C.".to_owned())
+                .unwrap();
         }
 
         if let (Some(early_stopping), Some(state)) =
@@ -325,6 +379,23 @@ fn should_evaluate_epoch<F: Float>(
     epoch % config.evaluate_step == 0 && (terminal_output || tracks_early_stopping)
 }
 
+fn should_evaluate_final_epoch<F: Float>(
+    summary: &TrainingSummary<F>,
+    config: &NNConfig<F>,
+) -> bool {
+    config.early_stopping.is_some()
+        && !summary.stopped_early
+        && summary.epochs_trained > 0
+        && summary.epochs_trained % config.evaluate_step != 0
+}
+
+fn stop_requested<F: Float>(config: &NNConfig<F>) -> bool {
+    config
+        .stop_signal
+        .as_ref()
+        .is_some_and(|signal| signal.load(Ordering::SeqCst))
+}
+
 fn write_epoch_log<F: Float>(
     pb: &mut RichProgress,
     epoch: usize,
@@ -377,6 +448,7 @@ fn update_early_stopping<F: Float>(
     validation_metrics: Metrics<F>,
     epoch: usize,
     summary: &mut TrainingSummary<F>,
+    can_stop_training: bool,
 ) -> EarlyStoppingUpdate {
     let (val_accuracy, val_loss) = validation_metrics;
     let score = early_stopping.metric.score(val_accuracy, val_loss);
@@ -393,6 +465,13 @@ fn update_early_stopping<F: Float>(
         summary.best_validation_loss = Some(val_loss);
         return EarlyStoppingUpdate {
             improved: true,
+            stop_message: None,
+        };
+    }
+
+    if !can_stop_training {
+        return EarlyStoppingUpdate {
+            improved: false,
             stop_message: None,
         };
     }
@@ -476,6 +555,7 @@ mod tests {
     use super::super::layers::*;
     use super::*;
     use crate::box_layers;
+    use crate::{EarlyStoppingConfig, EarlyStoppingMetric};
     use approx::assert_abs_diff_eq;
     use ndarray::{array, Axis};
     use rstest::*;
@@ -484,8 +564,7 @@ mod tests {
 
     type F = f64;
 
-    #[fixture]
-    fn simple_nn() -> (NeuralNetwork<'static, f64>, ArrayD<f64>, ArrayD<f64>) {
+    fn build_simple_nn() -> (NeuralNetwork<'static, f64>, ArrayD<f64>, ArrayD<f64>) {
         let mut layer_1 = Dense::new(2, 2);
         layer_1.weights = array![[0.15, 0.2], [0.25, 0.3]];
         layer_1.bias = array![0.35, 0.35];
@@ -511,6 +590,11 @@ mod tests {
         };
 
         (nn, inputs, desired)
+    }
+
+    #[fixture]
+    fn simple_nn() -> (NeuralNetwork<'static, f64>, ArrayD<f64>, ArrayD<f64>) {
+        build_simple_nn()
     }
 
     #[rstest]
