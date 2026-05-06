@@ -81,7 +81,7 @@ fn main() {
             Some((&x_val, &y_val)),
             NNConfig {
                 epochs: cli.epochs,
-                learning_rate: 0.001,
+                learning_rate: 0.0001,
                 batch_size: 32,
                 evaluate_step: 1,
                 loss_function: CrossEntropySoftmax::new().into(),
@@ -139,30 +139,30 @@ fn build_network(seed: Option<u64>) -> NeuralNetwork<'static, F> {
     if let Some(seed) = seed {
         let mut rng = StdRng::seed_from_u64(seed);
         NeuralNetwork::new(box_layers![
-            Conv::new_with_rng((1, 28, 28), 8, 3, &mut rng),
+            Conv::new_with_rng((1, 28, 28), 32, 3, &mut rng),
             ELU::new(1.0 as F),
-            MaxPooling::new((8, 26, 26), 2, 2),
-            Conv::new_with_rng((8, 13, 13), 16, 3, &mut rng),
+            MaxPooling::new((32, 26, 26), 2, 2),
+            Conv::new_with_rng((32, 13, 13), 64, 3, &mut rng),
             ELU::new(1.0 as F),
-            MaxPooling::new((16, 11, 11), 2, 2),
-            Flatten::new((16, 6, 6)),
-            Dense::new_with_rng(16 * 6 * 6, 64, &mut rng),
+            MaxPooling::new((64, 11, 11), 2, 2),
+            Flatten::new((64, 6, 6)),
+            Dense::new_with_rng(64 * 6 * 6, 128, &mut rng),
             ELU::new(1.0 as F),
-            Dense::new_with_rng(64, 10, &mut rng),
+            Dense::new_with_rng(128, 10, &mut rng),
             SoftmaxCE::new()
         ])
     } else {
         NeuralNetwork::new(box_layers![
-            Conv::new((1, 28, 28), 8, 3),
+            Conv::new((1, 28, 28), 32, 3),
             ELU::new(1.0 as F),
-            MaxPooling::new((8, 26, 26), 2, 2),
-            Conv::new((8, 13, 13), 16, 3),
+            MaxPooling::new((32, 26, 26), 2, 2),
+            Conv::new((32, 13, 13), 64, 3),
             ELU::new(1.0 as F),
-            MaxPooling::new((16, 11, 11), 2, 2),
-            Flatten::new((16, 6, 6)),
-            Dense::new(16 * 6 * 6, 64),
+            MaxPooling::new((64, 11, 11), 2, 2),
+            Flatten::new((64, 6, 6)),
+            Dense::new(64 * 6 * 6, 128),
             ELU::new(1.0 as F),
-            Dense::new(64, 10),
+            Dense::new(128, 10),
             SoftmaxCE::new()
         ])
     }
