@@ -8,10 +8,15 @@ pub trait Optimizer<F: Float>: Send {
 }
 
 /// Network-level optimizer config.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum OptimizerConfig<F: Float> {
+    #[default]
     SGD,
-    Adam { beta1: F, beta2: F, eps: F },
+    Adam {
+        beta1: F,
+        beta2: F,
+        eps: F,
+    },
 }
 
 impl<F: Float> OptimizerConfig<F> {
@@ -28,12 +33,6 @@ impl<F: Float> OptimizerConfig<F> {
             Self::SGD => Box::new(SGD),
             Self::Adam { beta1, beta2, eps } => Box::new(Adam::new(beta1, beta2, eps)),
         }
-    }
-}
-
-impl<F: Float> Default for OptimizerConfig<F> {
-    fn default() -> Self {
-        Self::SGD
     }
 }
 
@@ -99,7 +98,7 @@ impl<F: Float> Optimizer<F> for Adam<F> {
                 *v_i = beta2 * *v_i + one_minus_beta2 * g * g;
                 let m_hat = *m_i / bias_correction1;
                 let v_hat = *v_i / bias_correction2;
-                *p = *p - lr * m_hat / (v_hat.sqrt() + eps);
+                *p -= lr * m_hat / (v_hat.sqrt() + eps);
             });
     }
 }

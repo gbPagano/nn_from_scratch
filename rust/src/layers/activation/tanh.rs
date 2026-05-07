@@ -36,7 +36,7 @@ impl<F: Float> Layer<F> for TanH<F> {
         Zip::from(&mut output_gradient)
             .and(&self.output)
             .for_each(|g, &y| {
-                *g = *g * (one - y * y);
+                *g *= one - y * y;
             });
         output_gradient
     }

@@ -37,7 +37,7 @@ impl<F: Float> Layer<F> for Sigmoid<F> {
         Zip::from(&mut output_gradient)
             .and(&self.output)
             .for_each(|g, &y| {
-                *g = *g * (y * (one - y));
+                *g *= y * (one - y);
             });
         output_gradient
     }

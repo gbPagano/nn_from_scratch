@@ -58,7 +58,7 @@ impl<F: Float> Layer<F> for ELU<F> {
             .and(&self.output)
             .for_each(|g, &y| {
                 let d = if y >= zero { one } else { y + alpha };
-                *g = *g * d;
+                *g *= d;
             });
         output_gradient
     }

@@ -53,15 +53,27 @@ mod tests {
     use ndarray::array;
     use rstest::*;
 
+    type SimpleLayersA = (
+        Dense<f64>,
+        Dense<f64>,
+        Sigmoid<f64>,
+        Sigmoid<f64>,
+        ArrayD<f64>,
+        ArrayD<f64>,
+    );
+
+    type SimpleLayersB = (
+        Dense<f64>,
+        Dense<f64>,
+        Dense<f64>,
+        TanH<f64>,
+        TanH<f64>,
+        TanH<f64>,
+        ArrayD<f64>,
+    );
+
     #[fixture]
-    fn simple_layers_a() -> (
-        Dense<f64>,
-        Dense<f64>,
-        Sigmoid<f64>,
-        Sigmoid<f64>,
-        ArrayD<f64>,
-        ArrayD<f64>,
-    ) {
+    fn simple_layers_a() -> SimpleLayersA {
         let mut layer_a = Dense::new(2, 2);
         layer_a.weights = array![[0.15, 0.2], [0.25, 0.3]];
         layer_a.bias = array![0.35, 0.35];
@@ -80,15 +92,7 @@ mod tests {
     }
 
     #[fixture]
-    fn simple_layers_b() -> (
-        Dense<f64>,
-        Dense<f64>,
-        Dense<f64>,
-        TanH<f64>,
-        TanH<f64>,
-        TanH<f64>,
-        ArrayD<f64>,
-    ) {
+    fn simple_layers_b() -> SimpleLayersB {
         let mut layer_a = Dense::new(2, 3);
         layer_a.weights = array![[0.4, 0.5], [0.6, 0.7], [0.8, 0.3]];
         layer_a.bias = array![-0.2, -0.3, -0.4];
@@ -113,16 +117,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_forward_a(
-        simple_layers_a: (
-            Dense<f64>,
-            Dense<f64>,
-            Sigmoid<f64>,
-            Sigmoid<f64>,
-            ArrayD<f64>,
-            ArrayD<f64>,
-        ),
-    ) {
+    fn test_forward_a(simple_layers_a: SimpleLayersA) {
         let (mut layer_a, mut layer_b, mut activate, _, inputs, _) = simple_layers_a;
 
         let out_1 = layer_a.forward(inputs);
@@ -149,17 +144,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_forward_b(
-        simple_layers_b: (
-            Dense<f64>,
-            Dense<f64>,
-            Dense<f64>,
-            TanH<f64>,
-            TanH<f64>,
-            TanH<f64>,
-            ArrayD<f64>,
-        ),
-    ) {
+    fn test_forward_b(simple_layers_b: SimpleLayersB) {
         let (mut layer_a, mut layer_b, mut layer_c, mut activate, _, _, inputs) = simple_layers_b;
 
         let out_1 = layer_a.forward(inputs);
@@ -178,16 +163,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_last_layer_backward(
-        simple_layers_a: (
-            Dense<f64>,
-            Dense<f64>,
-            Sigmoid<f64>,
-            Sigmoid<f64>,
-            ArrayD<f64>,
-            ArrayD<f64>,
-        ),
-    ) {
+    fn test_last_layer_backward(simple_layers_a: SimpleLayersA) {
         let (mut layer_a, mut layer_b, mut activate_a, mut activate_b, inputs, desired) =
             simple_layers_a;
 
@@ -206,16 +182,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_middle_layer_backward(
-        simple_layers_a: (
-            Dense<f64>,
-            Dense<f64>,
-            Sigmoid<f64>,
-            Sigmoid<f64>,
-            ArrayD<f64>,
-            ArrayD<f64>,
-        ),
-    ) {
+    fn test_middle_layer_backward(simple_layers_a: SimpleLayersA) {
         let (mut layer_a, mut layer_b, mut activate_a, mut activate_b, inputs, desired) =
             simple_layers_a;
 

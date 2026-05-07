@@ -15,6 +15,7 @@ use super::loss::Loss;
 use super::{Float, NNConfig};
 
 type Metrics<F> = (f64, F);
+type ValidationData<'a, F> = Option<(&'a [ArrayD<F>], &'a [ArrayD<F>])>;
 
 #[derive(Serialize, Deserialize)]
 struct NetworkCheckpoint<F> {
@@ -83,7 +84,7 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
         &mut self,
         x_train: &[ArrayD<F>],
         y_train: &[ArrayD<F>],
-        validation: Option<(&[ArrayD<F>], &[ArrayD<F>])>,
+        validation: ValidationData<F>,
         config: NNConfig<F>,
     ) -> TrainingSummary<F> {
         validate_training_config(validation, &config);
@@ -350,10 +351,7 @@ impl<'a, F: Float> NeuralNetwork<'a, F> {
     }
 }
 
-fn validate_training_config<F: Float>(
-    validation: Option<(&[ArrayD<F>], &[ArrayD<F>])>,
-    config: &NNConfig<F>,
-) {
+fn validate_training_config<F: Float>(validation: ValidationData<F>, config: &NNConfig<F>) {
     assert!(
         config.batch_size > 0,
         "batch_size must be greater than zero"
@@ -376,7 +374,7 @@ fn should_evaluate_epoch<F: Float>(
     terminal_output: bool,
     tracks_early_stopping: bool,
 ) -> bool {
-    epoch % config.evaluate_step == 0 && (terminal_output || tracks_early_stopping)
+    epoch.is_multiple_of(config.evaluate_step) && (terminal_output || tracks_early_stopping)
 }
 
 fn should_evaluate_final_epoch<F: Float>(
@@ -386,7 +384,7 @@ fn should_evaluate_final_epoch<F: Float>(
     config.early_stopping.is_some()
         && !summary.stopped_early
         && summary.epochs_trained > 0
-        && summary.epochs_trained % config.evaluate_step != 0
+        && !summary.epochs_trained.is_multiple_of(config.evaluate_step)
 }
 
 fn stop_requested<F: Float>(config: &NNConfig<F>) -> bool {
@@ -452,9 +450,9 @@ fn update_early_stopping<F: Float>(
 ) -> EarlyStoppingUpdate {
     let (val_accuracy, val_loss) = validation_metrics;
     let score = early_stopping.metric.score(val_accuracy, val_loss);
-    let improved = state.best_score.map_or(true, |best_score| {
-        early_stopping.metric.is_improvement(score, best_score)
-    });
+    let improved = state
+        .best_score
+        .is_none_or(|best_score| early_stopping.metric.is_improvement(score, best_score));
 
     if improved {
         state.best_score = Some(score);
@@ -555,7 +553,6 @@ mod tests {
     use super::super::layers::*;
     use super::*;
     use crate::box_layers;
-    use crate::{EarlyStoppingConfig, EarlyStoppingMetric};
     use approx::assert_abs_diff_eq;
     use ndarray::{array, Axis};
     use rstest::*;
@@ -718,8 +715,10 @@ mod tests {
             .map(|item| item.into_owned().into_dyn())
             .collect();
 
-        let mut config = NNConfig::default();
-        config.batch_size = 2;
+        let config = NNConfig {
+            batch_size: 2,
+            ..Default::default()
+        };
         nn.fit(&x_train, &y_train, config);
 
         assert_abs_diff_eq!(
